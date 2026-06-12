@@ -4,7 +4,8 @@
       "WebSearch",
       "Bash(uv tool *)",
       "Bash(peekaboowin *)",
-      "Bash(which *)"
+      "Bash(which *)",
+      "Bash(peekaboowin-setup)"
     ]
   }
 }

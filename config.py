@@ -72,12 +72,19 @@ CONFIG = {
         "beta_init": 1.0,
         "beta_increment": 0.1,           # per success
         "goal_radius": 1.5,              # distance to consider goal reached
+        "guidance_scale": 0.1,           # guidance reward scale (dense shaping)
     },
 
     # Collision
     "collision": {
         "uav_radius": 0.5,         # UAV physical radius (m)
         "obstacle_radius": 0.5,    # obstacle radius
+    },
+
+    # Safe goal generation
+    "safe_goal": {
+        "min_dist_from_obs": 3.0,  # min distance from obstacle center when placing goal
+        "margin": 3.0,            # min distance from world boundary
     },
 
     # =========================================================================
