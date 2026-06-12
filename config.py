@@ -9,15 +9,15 @@ CONFIG = {
     "max_steps": 2000,
     "dt": 0.1,                     # physics timestep (s)
 
-    # UAV kinematics (bicycle model)
+    # UAV kinematics (fixed-wing bank-angle model)
     "uav": {
         "v_min": 1.0,              # minimum speed (m/s)
         "v_max": 5.0,              # maximum speed (m/s)
         "v_cruise": 3.0,           # cruise speed
-        "delta_max": 0.15,          # max steering angle (rad) ~8.6 deg
+        "max_bank_angle": 0.25,     # max roll angle (rad) ~14°
         "a_th_max": 1.0,           # max throttle
         "drag_coef": 0.1,          # drag coefficient
-        "L": 2.0,                  # wheelbase (m)
+        "g": 9.81,                 # gravitational acceleration (m/s²)
     },
 
     # Point-cloud perception
