@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import glob
 import os
 import time
 import numpy as np
@@ -177,6 +178,17 @@ def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
     return mean_reward
 
 
+def cleanup_old_checkpoints(checkpoint_dir: str, keep: int = 10):
+    """Remove old checkpoint files, keeping only the `keep` most recent ones."""
+    files = sorted(glob.glob(os.path.join(checkpoint_dir, "model_*.pth")))
+    while len(files) > keep:
+        oldest = files.pop(0)
+        try:
+            os.remove(oldest)
+        except OSError:
+            pass
+
+
 def train():
     args = parse_args()
 
@@ -299,6 +311,7 @@ def train():
                 )
                 agent.save_checkpoint(ckpt_path)
                 log(f"Checkpoint saved: {ckpt_path}")
+                cleanup_old_checkpoints(checkpoint_dir, keep=10)
                 last_save_time = time.time()
 
             # Demo render (every N minutes)
@@ -326,6 +339,7 @@ def train():
     )
     agent.save_checkpoint(final_ckpt)
     log(f"Training complete. Final checkpoint: {final_ckpt}")
+    cleanup_old_checkpoints(checkpoint_dir, keep=10)
 
     # Final demo
     log("Rendering final demo clip...")
