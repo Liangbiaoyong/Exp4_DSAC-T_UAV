@@ -35,13 +35,15 @@ A multi-UAV obstacle avoidance and shortest-path navigation system in a 50×50m 
 **Do not change these without discussing with the user first and updating this file:**
 
 - **Physics engine**: Box2D via a custom Gym environment wrapper.
-- **UAV kinematics**: Bicycle model with inertial effects (no reverse, speed-dependent turn radius).
-- **Perception**: 120° forward fan, 60 rays with exponential detection probability and Gaussian noise, plus ghost points (0.5% probability).
-- **Local mapping**: 40×40m occupancy grid at 0.25m resolution (160×160), updated via Bresenham line-of-sight.
+- **UAV kinematics**: Fixed-wing bank-angle turn model. Turn rate `psi_dot = g * tan(phi) / v` (inverse proportional to speed, physically correct). Turn radius `r = v² / (g * tan(phi))` (∝ v²). Max bank angle 0.25 rad (~14°).
+- **Perception**: 120° forward fan, 60 rays with exponential detection probability and Gaussian noise, plus ghost points (0.5% probability). World boundaries (walls) are detected as obstacles.
+- **Local mapping**: 40×40m occupancy grid at 0.25m resolution (160×160), updated via Bresenham line-of-sight. Shifts with UAV.
 - **Dynamic tracking**: DBSCAN clustering → Kalman filter (constant velocity) → Hungarian matching.
 - **Algorithm**: DSAC-T (distributed critic with quantile distribution, 32 quantiles). Actor outputs Gaussian policy squashed through Tanh.
-- **Reward**: +10 for goal, -0.01 per step, -C_coll * beta for collision. Beta increases with success count.
-- **Collision handling**: Collided UAV resets in-place (goal unchanged); episode continues for other UAVs. Max 2000 steps.
+- **Reward**: `r = step_penalty + guidance_reward + goal_reward + collision_penalty`. Guidance reward (0.1 × distance delta) provides dense shaping signal. +10 for goal, -0.01 per step, -C_coll * beta for collision. Beta increases with success count.
+- **Temperature alpha**: Learned via gradient descent. Controls explore/exploit trade-off. High (~1.0) = exploratory, low (~0.1) = deterministic.
+- **Collision handling**: Collided UAV resets in-place (new random position, goal unchanged); episode continues for other UAVs. Boundary contact also counts as collision. Max 2000 steps.
+- **Safe goal placement**: New goals placed ≥3m from obstacles and ≥3m from world boundaries.
 - **Training**: AdamW (lr=3e-4, weight decay 1e-4), batch 256, replay buffer 1e6, update every 50 env steps, gamma=0.99.
 - **Checkpoint**: Every 10 min auto-save to `./checkpoints/model_YYYYMMDD_HHMMSS.pth`. Resume via `--resume`.
 - **Demo rendering**: Every 5 min during training, auto-renders a demo clip to `demo_clips/`.
@@ -50,10 +52,11 @@ A multi-UAV obstacle avoidance and shortest-path navigation system in a 50×50m 
 
 ### Environment (fixedwing_env.py)
 
-- **Fixed-wing kinematics**: Bicycle model with drag. State: (x, y, psi, v). Control: throttle a_th ∈ [-1,1], steering delta ∈ [-delta_max, delta_max].
-- **Point cloud**: 60 rays in 120° FOV. Each ray: detection prob = exp(-d/D0), noise N(0, k*d), ghost points at P=0.005.
+- **Fixed-wing kinematics**: Bank-angle turn model (real fixed-wing physics). Turn rate `psi_dot = g * tan(phi) / v`. State: (x, y, psi, v). Control: throttle a_th ∈ [-1,1], bank angle delta ∈ [-1,1] → scaled to max_bank_angle.
+- **Point cloud**: 60 rays in 120° FOV. Each ray: detection prob = exp(-d/D0), noise N(0, k*d), ghost points at P=0.005. World boundaries (walls) detected as obstacles.
 - **Local occupancy grid**: 160×160 grid (40m × 40m, 0.25m/cell). Bresenham update: -0.1 free / +0.3 occupied, clamped [0,1]. Shifts with UAV.
 - **Dynamic tracking**: DBSCAN (eps=0.5, min_samples=3) → Kalman filter (constant velocity, state [x,y,vx,vy]) → Hungarian matching (Mahalanobis distance). Lost >2 frames → delete.
+- **Collision detection**: UAV-UAV, UAV-obstacle, and **UAV-boundary** collisions are all detected. Collided UAV reset in-place with random perturbation.
 
 ### Networks (networks.py)
 
@@ -174,7 +177,8 @@ All hyperparameters live in `config.py` as a single `CONFIG` dictionary. Default
 
 ### GitHub Remote Rules
 
-- The remote repository is: **`https://github.com/26634/Exp4_DSAC-T_UAV.git`**
+- The remote repository is: **`https://github.com/Liangbiaoyong/Exp4_DSAC-T_UAV.git`**
+- Detailed technical documentation is in `docs/architecture.md` (reward structure, alpha temperature, physics model, safe goal generation).
 - Always keep local and remote in sync:
   - Before making changes: `git pull`
   - After committing: `git push`
