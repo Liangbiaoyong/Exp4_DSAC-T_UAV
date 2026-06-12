@@ -129,7 +129,7 @@ CONFIG = {
         "demo_interval_min": 5,     # render a demo clip every 5 minutes
         "log_interval": 100,        # steps between console logs
         "eval_episodes": 3,         # episodes per demo render
-        "eval_max_steps": 500,
+        "eval_max_steps": 300,
     },
 
     # =========================================================================
@@ -137,7 +137,7 @@ CONFIG = {
     # =========================================================================
     "demo": {
         "render_mode": "matplotlib",  # or "pygame"
-        "fig_size": (12, 10),
+        "fig_size": (8, 6),
         "trail_length": 200,          # path history points
         "predict_steps": 20,          # future prediction (2s at 0.1s dt)
         "save_frames": True,

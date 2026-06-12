@@ -128,7 +128,7 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
         total_reward += rewards
 
         # Render every 3 steps to balance speed and smoothness
-        if step % 3 == 0 or step == max_steps - 1:
+        if step % 6 == 0 or step == max_steps - 1:
             # ---- World View ----
             ax_world.clear()
             ax_world.set_xlim(-2, env.world_size + 2)

@@ -83,7 +83,7 @@ def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
         total_reward += rewards
 
         # Capture frame every 5 steps to keep file size manageable
-        if step % 5 == 0:
+        if step % 10 == 0:
             # Left: world view
             ax_map.clear()
             ax_map.set_xlim(0, env.world_size)
