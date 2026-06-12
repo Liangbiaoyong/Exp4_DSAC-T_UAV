@@ -117,7 +117,7 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
     colors = ["red"] + [plt.cm.tab10(i / max(env.num_uavs - 1, 1))
                         for i in range(1, env.num_uavs)]
 
-    for step in range(max_steps):
+    for _demo_step in range(max_steps):
         actions = []
         for uav_obs in obs_list:
             action = agent.select_action(uav_obs, deterministic=True)
@@ -127,14 +127,14 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
         obs_list, rewards, dones, info = env.step(actions)
         total_reward += rewards
 
-        # Render every 3 steps to balance speed and smoothness
-        if step % 6 == 0 or step == max_steps - 1:
+        # Render every 6 steps to balance speed and smoothness
+        if _demo_step % 6 == 0 or _demo_step == max_steps - 1:
             # ---- World View ----
             ax_world.clear()
             ax_world.set_xlim(-2, env.world_size + 2)
             ax_world.set_ylim(-2, env.world_size + 2)
             ax_world.set_aspect("equal")
-            ax_world.set_title(f"Multi-UAV Navigation — Step {step}", fontsize=12)
+            ax_world.set_title(f"Multi-UAV Navigation — Step {_demo_step}", fontsize=12)
             ax_world.grid(True, alpha=0.3)
 
             # Static obstacles
@@ -177,7 +177,7 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
                             k.x + future_path[:, 0],
                             k.y + future_path[:, 1],
                             "--", color=color, alpha=0.6, linewidth=1.5,
-                            label=f"UAV {i} pred" if step == 0 else ""
+                            label=f"UAV {i} pred" if _demo_step == 0 else ""
                         )
                 except Exception:
                     pass
@@ -185,7 +185,7 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
                 # UAV position
                 ax_world.plot(k.x, k.y, "o", color=color, markersize=10,
                               markeredgecolor="black", markeredgewidth=1,
-                              label=f"UAV {i}" if step == 0 else "")
+                              label=f"UAV {i}" if _demo_step == 0 else "")
 
                 # Heading indicator (velocity vector)
                 arrow_len = 2.0
@@ -305,7 +305,7 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
 
     mean_reward = total_reward.mean()
     print(f"  Episode {episode}: mean reward = {mean_reward:.2f}, "
-          f"steps = {step + 1}, "
+          f"steps = {_demo_step + 1}, "
           f"collisions = {sum(1 for u in env.uavs if u.collided)}")
 
     if not headless:

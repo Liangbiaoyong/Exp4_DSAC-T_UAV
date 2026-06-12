@@ -72,7 +72,7 @@ def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
     frames = []
     total_reward = np.zeros(env.num_uavs)
 
-    for step in range(max_steps):
+    for _step in range(max_steps):
         actions = []
         for uav_obs in obs_list:
             action = agent.select_action(uav_obs, deterministic=True)
@@ -83,13 +83,13 @@ def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
         total_reward += rewards
 
         # Capture frame every 5 steps to keep file size manageable
-        if step % 10 == 0:
+        if _step % 10 == 0:
             # Left: world view
             ax_map.clear()
             ax_map.set_xlim(0, env.world_size)
             ax_map.set_ylim(0, env.world_size)
             ax_map.set_aspect("equal")
-            ax_map.set_title(f"Step {step}")
+            ax_map.set_title(f"Step {_step}")
 
             # Draw static obstacles
             for obs in env.static_obstacles:
