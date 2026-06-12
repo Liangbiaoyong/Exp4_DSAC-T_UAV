@@ -46,7 +46,8 @@ def parse_args():
 
 
 def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
-                     episode: int, save_dir: str, max_steps: int = 500):
+                     episode: int, save_dir: str, max_steps: int = 500,
+                     step: int = 0):
     """
     Render a demo clip showing UAV navigation.
     Saves frames as a video file using matplotlib animation.
@@ -57,6 +58,7 @@ def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
         episode: episode number (for filename)
         save_dir: directory to save the clip
         max_steps: max steps per episode
+        step: cumulative training step for filename labeling
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -159,7 +161,7 @@ def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
         import imageio
         os.makedirs(save_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        gif_path = os.path.join(save_dir, f"demo_ep{episode}_{timestamp}.gif")
+        gif_path = os.path.join(save_dir, f"demo_ep{episode}_step{step}_{timestamp}.gif")
         imageio.mimsave(gif_path, frames, fps=CONFIG["demo"]["fps"])
         print(f"  Demo clip saved: {gif_path} ({len(frames)} frames)")
 
@@ -294,12 +296,15 @@ def train():
                 )
                 last_log_step = total_steps
 
+            # Cumulative step counter (across checkpoint resumes)
+            cum_step = start_step + total_steps
+
             # Checkpoint save
             elapsed_since_save = time.time() - last_save_time
             if elapsed_since_save >= args.save_interval_min * 60:
                 ckpt_path = os.path.join(
                     checkpoint_dir,
-                    f"model_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pth"
+                    f"model_step{cum_step}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pth"
                 )
                 agent.save_checkpoint(ckpt_path)
                 log(f"Checkpoint saved: {ckpt_path}")
@@ -315,7 +320,8 @@ def train():
                     eval_env = MultiFixedWingEnv()
                     for ep in range(args.eval_episodes):
                         render_demo_clip(agent, eval_env, ep + 1,
-                                         demo_clip_dir, CONFIG["train"]["eval_max_steps"])
+                                         demo_clip_dir, CONFIG["train"]["eval_max_steps"],
+                                         step=cum_step)
                     log(f"Demo clip rendered ({args.eval_episodes} episodes)")
                     cleanup_old_files(demo_clip_dir, "demo_*.gif", keep=10)
                 except Exception as e:
@@ -326,9 +332,10 @@ def train():
                     last_demo_time = time.time()
 
     # Final save
+    cum_step = start_step + total_steps
     final_ckpt = os.path.join(
         checkpoint_dir,
-        f"model_final_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pth"
+        f"model_final_step{cum_step}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pth"
     )
     agent.save_checkpoint(final_ckpt)
     log(f"Training complete. Final checkpoint: {final_ckpt}")
@@ -340,7 +347,8 @@ def train():
         eval_env = MultiFixedWingEnv()
         for ep in range(args.eval_episodes):
             render_demo_clip(agent, eval_env, ep,
-                             demo_clip_dir, CONFIG["train"]["eval_max_steps"])
+                             demo_clip_dir, CONFIG["train"]["eval_max_steps"],
+                             step=cum_step)
     except Exception as e:
         log(f"Final demo failed: {e}")
 

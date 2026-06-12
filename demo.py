@@ -76,7 +76,8 @@ def predict_future_trajectory(agent: DSACTAgent, obs: dict,
 
 def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
                      episode: int, save_dir: str, headless: bool,
-                     fps: int = 10, max_steps: int = 500) -> float:
+                     fps: int = 10, max_steps: int = 500,
+                     step: int = 0) -> float:
     """
     Run a single demo episode with visualization.
 
@@ -286,7 +287,7 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
         import imageio
         os.makedirs(save_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        gif_path = os.path.join(save_dir, f"demo_ep{episode}_{timestamp}.gif")
+        gif_path = os.path.join(save_dir, f"demo_ep{episode}_step{step}_{timestamp}.gif")
         imageio.mimsave(gif_path, frames, fps=fps)
         print(f"  Saved: {gif_path} ({len(frames)} frames)")
 
@@ -358,6 +359,7 @@ def main():
             headless=args.headless or args.no_render,
             fps=args.fps,
             max_steps=args.max_steps if not args.no_render else 10,
+            step=agent.step,
         )
         total_reward += reward
 
