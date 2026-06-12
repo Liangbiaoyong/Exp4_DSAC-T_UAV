@@ -139,6 +139,7 @@ class DSACTAgent:
 
         # Step counter
         self.step = 0
+        self.total_env_steps = 0  # cumulative env steps across all training runs
 
     def _hard_update_target(self):
         """Copy critic weights to target."""
@@ -355,6 +356,7 @@ class DSACTAgent:
             "optimizer_critic": self.critic_opt.state_dict(),
             "optimizer_alpha": self.temp_opt.state_dict(),
             "step": self.step,
+            "total_env_steps": self.total_env_steps,
         }, path)
 
     def load_checkpoint(self, path: str):
@@ -368,4 +370,5 @@ class DSACTAgent:
         self.critic_opt.load_state_dict(ckpt["optimizer_critic"])
         self.temp_opt.load_state_dict(ckpt["optimizer_alpha"])
         self.step = ckpt["step"]
+        self.total_env_steps = ckpt.get("total_env_steps", 0)
         return self.step

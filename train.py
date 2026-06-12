@@ -274,6 +274,7 @@ def train():
                 episode_rewards[env_idx].append(rewards[uav_idx])
 
             total_steps += 1
+            agent.total_env_steps += 1
 
             # Update agent periodically
             if total_steps % agent.update_every == 0 and len(agent.buffer) >= agent.batch_size:
@@ -297,15 +298,12 @@ def train():
                 )
                 last_log_step = total_steps
 
-            # Cumulative step counter (across checkpoint resumes)
-            cum_step = start_step + total_steps
-
             # Checkpoint save
             elapsed_since_save = time.time() - last_save_time
             if elapsed_since_save >= args.save_interval_min * 60:
                 ckpt_path = os.path.join(
                     checkpoint_dir,
-                    f"model_step{cum_step}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pth"
+                    f"model_step{agent.total_env_steps}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pth"
                 )
                 agent.save_checkpoint(ckpt_path)
                 log(f"Checkpoint saved: {ckpt_path}")
@@ -322,7 +320,7 @@ def train():
                     for ep in range(args.eval_episodes):
                         render_demo_clip(agent, eval_env, ep + 1,
                                          demo_clip_dir, CONFIG["train"]["eval_max_steps"],
-                                         step=cum_step)
+                                         step=agent.total_env_steps)
                     log(f"Demo clip rendered ({args.eval_episodes} episodes)")
                     cleanup_old_files(demo_clip_dir, "demo_*.gif", keep=10)
                 except Exception as e:
@@ -333,10 +331,9 @@ def train():
                     last_demo_time = time.time()
 
     # Final save
-    cum_step = start_step + total_steps
     final_ckpt = os.path.join(
         checkpoint_dir,
-        f"model_final_step{cum_step}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pth"
+        f"model_final_step{agent.total_env_steps}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pth"
     )
     agent.save_checkpoint(final_ckpt)
     log(f"Training complete. Final checkpoint: {final_ckpt}")
@@ -349,7 +346,7 @@ def train():
         for ep in range(args.eval_episodes):
             render_demo_clip(agent, eval_env, ep,
                              demo_clip_dir, CONFIG["train"]["eval_max_steps"],
-                             step=cum_step)
+                             step=agent.total_env_steps)
     except Exception as e:
         log(f"Final demo failed: {e}")
 

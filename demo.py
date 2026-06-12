@@ -360,7 +360,7 @@ def main():
             headless=args.headless or args.no_render,
             fps=args.fps,
             max_steps=args.max_steps if not args.no_render else 10,
-            step=agent.step,
+            step=agent.total_env_steps,
         )
         total_reward += reward
 
