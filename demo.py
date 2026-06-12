@@ -290,6 +290,16 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
         imageio.mimsave(gif_path, frames, fps=fps)
         print(f"  Saved: {gif_path} ({len(frames)} frames)")
 
+        # Keep only 10 most recent gifs
+        import glob as _glob
+        gifs = sorted(_glob.glob(os.path.join(save_dir, "demo_*.gif")))
+        while len(gifs) > 10:
+            _old = gifs.pop(0)
+            try:
+                os.remove(_old)
+            except OSError:
+                pass
+
     mean_reward = total_reward.mean()
     print(f"  Episode {episode}: mean reward = {mean_reward:.2f}, "
           f"steps = {step + 1}, "
