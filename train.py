@@ -174,8 +174,9 @@ def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
 
 
 def cleanup_old_files(directory: str, pattern: str, keep: int = 10):
-    """Remove old files matching pattern, keeping only the `keep` most recent ones."""
-    files = sorted(glob.glob(os.path.join(directory, pattern)))
+    """Remove old files, keeping only the `keep` most recent ones by modification time."""
+    files = sorted(glob.glob(os.path.join(directory, pattern)),
+                   key=os.path.getmtime)
     while len(files) > keep:
         oldest = files.pop(0)
         try:

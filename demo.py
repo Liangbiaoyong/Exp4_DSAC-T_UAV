@@ -294,7 +294,8 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
 
         # Keep only 10 most recent gifs
         import glob as _glob
-        gifs = sorted(_glob.glob(os.path.join(save_dir, "demo_*.gif")))
+        gifs = sorted(_glob.glob(os.path.join(save_dir, "demo_*.gif")),
+                      key=os.path.getmtime)
         while len(gifs) > 10:
             _old = gifs.pop(0)
             try:
