@@ -163,14 +163,6 @@ def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
         imageio.mimsave(gif_path, frames, fps=CONFIG["demo"]["fps"])
         print(f"  Demo clip saved: {gif_path} ({len(frames)} frames)")
 
-        # Also save as MP4 if possible
-        try:
-            mp4_path = os.path.join(save_dir, f"demo_ep{episode}_{timestamp}.mp4")
-            imageio.mimsave(mp4_path, frames, fps=CONFIG["demo"]["fps"], codec="libx264")
-            print(f"  Demo video saved: {mp4_path}")
-        except Exception:
-            pass  # MP4 saving is optional
-
     plt.close(fig)
 
     mean_reward = total_reward.mean()

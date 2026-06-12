@@ -290,13 +290,6 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
         imageio.mimsave(gif_path, frames, fps=fps)
         print(f"  Saved: {gif_path} ({len(frames)} frames)")
 
-        try:
-            mp4_path = os.path.join(save_dir, f"demo_ep{episode}_{timestamp}.mp4")
-            imageio.mimsave(mp4_path, frames, fps=fps, codec="libx264")
-            print(f"  Saved: {mp4_path}")
-        except Exception:
-            pass
-
     mean_reward = total_reward.mean()
     print(f"  Episode {episode}: mean reward = {mean_reward:.2f}, "
           f"steps = {step + 1}, "
