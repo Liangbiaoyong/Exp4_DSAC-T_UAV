@@ -25,7 +25,7 @@ CONFIG = {
         "num_rays": 60,
         "fov": 2.094,              # 120° in radians
         "max_range": 15.0,         # max detection range (m)
-        "D0": 5.0,                 # characteristic distance for detection prob
+        "D0": 10.0,                # characteristic distance for detection prob (was 5.0)
         "noise_coef": 0.1,         # noise std = k * d
         "ghost_prob": 0.005,       # ghost point probability
     },
@@ -36,8 +36,8 @@ CONFIG = {
         "resolution": 0.25,        # m/cell
         "width": 160,              # cells (40 / 0.25)
         "height": 160,
-        "free_inc": -0.1,          # Bresenham free-space increment
-        "occ_inc": 0.3,            # occupancy increment
+        "free_inc": -0.08,         # Bresenham free-space increment (was -0.1)
+        "occ_inc": 0.5,            # occupancy increment (was 0.3)
         "clip_min": 0.0,
         "clip_max": 1.0,
         "occ_threshold": 0.6,      # considered occupied
