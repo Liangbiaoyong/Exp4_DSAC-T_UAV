@@ -97,7 +97,8 @@ def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
                 ax_map.add_patch(circle)
 
             # Draw UAVs
-            colors = plt.cm.tab10(np.linspace(0, 1, env.num_uavs))
+            colors = ["red"] + [plt.cm.tab10(i / max(env.num_uavs - 1, 1))
+                                for i in range(1, env.num_uavs)]
             for i, uav in enumerate(env.uavs):
                 k = uav.kinematics
                 color = colors[i]
@@ -136,7 +137,7 @@ def render_demo_clip(agent: DSACTAgent, env: MultiFixedWingEnv,
 
             # Right: occupancy grid (UAV 0)
             ax_pc.clear()
-            grid = uav_obs["grid_map"]
+            grid = obs_list[0]["grid_map"]
             ax_pc.imshow(grid, cmap="hot_r", origin="lower",
                          extent=(0, CONFIG["grid"]["size"],
                                  CONFIG["grid"]["size"], 0))

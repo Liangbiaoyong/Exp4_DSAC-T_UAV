@@ -114,7 +114,8 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
     ax_pc = fig.add_subplot(gs[0, 2])
     ax_stats = fig.add_subplot(gs[1, 1:])
 
-    colors = plt.cm.tab10(np.linspace(0, 1, env.num_uavs))
+    colors = ["red"] + [plt.cm.tab10(i / max(env.num_uavs - 1, 1))
+                        for i in range(1, env.num_uavs)]
 
     for step in range(max_steps):
         actions = []
