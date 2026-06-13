@@ -22,12 +22,12 @@ CONFIG = {
 
     # Point-cloud perception
     "perception": {
-        "num_rays": 60,
+        "num_rays": 80,            # increased from 60 — denser scan lines
         "fov": 2.094,              # 120° in radians
         "max_range": 15.0,         # max detection range (m)
         "D0": 10.0,                # characteristic distance for detection prob (was 5.0)
-        "noise_coef": 0.1,         # noise std = k * d
-        "ghost_prob": 0.005,       # ghost point probability
+        "noise_coef": 0.05,        # halved from 0.1 — more accurate readings
+        "ghost_prob": 0.002,       # reduced from 0.005 — fewer ghost points
     },
 
     # Occupancy grid mapping
@@ -55,7 +55,7 @@ CONFIG = {
 
     # Observation dimensions
     "obs": {
-        "pointcloud_dim": 60,
+        "pointcloud_dim": 80,
         "grid_h": 160,
         "grid_w": 160,
         "state_dim": 6,            # [v, psi, d_goal, theta_goal, delta, arrived_flag]
