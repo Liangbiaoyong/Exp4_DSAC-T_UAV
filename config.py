@@ -66,7 +66,7 @@ CONFIG = {
     "reward": {
         "goal_reward": 10.0,
         "step_penalty": -0.01,
-        "collision_penalty_base": 200.0,   # C_coll
+        "collision_penalty_base": 20.0,   # C_coll
         "beta_init": 1.0,
         "beta_increment": 0.3,           # per success
         "goal_radius": 1.5,              # distance to consider goal reached
