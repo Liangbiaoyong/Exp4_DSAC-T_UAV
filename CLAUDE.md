@@ -208,5 +208,12 @@ git push
 
 **MUST FOLLOW — do not bypass:**
 
+- **User consent required for all operations**: Do not execute training, testing, demo generation, or any long-running computation without explicit user approval. Wait for the user to give the go-ahead before starting any such operation.
+
+- **Config modifications require approval**: Any change to `config.py` parameters (reward values, network dimensions, training hyperparameters, curriculum stage configs, etc.) must be presented to the user and explicitly approved before being applied. Do not modify config.py autonomously.
+
 - **File operations safety**: Before running any wildcard `rm`, `rm -rf`, `git clean`, or other destructive file operations on untracked/generated directories (e.g., `checkpoints/`, `demo_clips/`, `logs/`), you MUST first inspect the directory contents with `ls -la` to confirm what files exist and will be affected. If user-generated training artifacts (checkpoints, logs, demo clips) are present, ask the user before deleting any of them.
+
 - **No silent cleanup**: Do not delete files matching user-generated patterns (`model_*.pth`, `demo_*.gif`, `train_*.log`) without either explicit user confirmation or a prior rule explicitly authorizing it (e.g., `cleanup_old_files` is authorized because its keep-limit is a designed feature).
+
+- **Test/training safety**: Do not modify `train.py`, `demo.py`, or run training/demo scripts without first confirming with the user. Present the planned command and parameters, and wait for approval before executing.

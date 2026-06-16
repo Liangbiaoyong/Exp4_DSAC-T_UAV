@@ -66,7 +66,7 @@ CONFIG = {
     "reward": {
         "goal_reward": 10.0,
         "step_penalty": -0.01,
-        "collision_penalty_base": 20.0,   # C_coll
+        "collision_penalty_base": 200.0,   # C_coll
         "beta_init": 1.0,
         "beta_increment": 0.3,           # per success
         "goal_radius": 1.5,              # distance to consider goal reached
@@ -121,7 +121,7 @@ CONFIG = {
         "weight_decay": 1e-4,
         "batch_size": 256,
         "buffer_capacity": 100_000,
-        "update_every": 200,         # env steps between updates
+        "update_every": 50,         # env steps between updates
         "updates_per_step": 1,
         "c_val": 50.0,              # distribution truncation bound
         "critic_reg": 1e-5,         # critic L2 regularization
