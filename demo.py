@@ -22,7 +22,7 @@ from typing import Optional, List
 import glob
 
 from config import CONFIG
-from env.fixedwing_env import MultiFixedWingEnv
+from env.quadrotor_env import MultiQuadrotorEnv
 from dsac_t import DSACTAgent
 
 
@@ -42,39 +42,39 @@ def parse_args():
                         help="Frames per second for saved clips")
     parser.add_argument("--no_render", action="store_true",
                         help="Skip rendering (benchmark mode)")
+    parser.add_argument("--stage", type=int, default=None,
+                        help="Curriculum stage index (0-based), auto-detected from checkpoint if not given")
     return parser.parse_args()
 
 
 def predict_future_trajectory(agent: DSACTAgent, obs: dict,
                               num_steps: int = 20, dt: float = 0.1) -> np.ndarray:
     """
-    Predict future trajectory by rolling out the policy.
+    Predict future trajectory by rolling out policy with quadrotor kinematics.
     Returns: (num_steps, 2) array of predicted positions.
     """
-    from env.fixedwing_env import FixedWingKinematics
+    from env.quadrotor_env import Quadrotor2DKinematics
 
-    # Extract current state from observation
-    # We need to reconstruct kinematics from the obs
-    # self_state: [v_norm, sin(psi), cos(psi), d_goal_norm, theta_goal_norm, arrived]
     self_state = obs["self_state"]
-    v_norm = (self_state[0] + 1) / 2  # back from [-1,1] to [0,1]
-    v = v_norm * (CONFIG["uav"]["v_max"] - CONFIG["uav"]["v_min"]) + CONFIG["uav"]["v_min"]
+    # self_state: [v_norm(2x-1), sin(psi), cos(psi), ...]
+    v_norm = (self_state[0] + 1) / 2  # [-1,1] → [0,1]
+    v = v_norm * CONFIG["uav"]["max_speed"]
     psi = math.atan2(self_state[1], self_state[2])
+    vx = v * math.cos(psi)
+    vy = v * math.sin(psi)
 
-    # Create a temporary kinematics for prediction
-    pred_kin = FixedWingKinematics(0, 0, psi, v)
+    pred_kin = Quadrotor2DKinematics(0, 0, vx, vy)
 
-    # Predict using current policy
-    predicted_positions = []
-    for step in range(num_steps):
+    positions = []
+    for _ in range(num_steps):
         action = agent.select_action(obs, deterministic=True)
         pred_kin.step(action[0], action[1], dt)
-        predicted_positions.append([pred_kin.x, pred_kin.y])
+        positions.append([pred_kin.x, pred_kin.y])
 
-    return np.array(predicted_positions)
+    return np.array(positions)
 
 
-def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
+def run_demo_episode(agent: DSACTAgent, env: MultiQuadrotorEnv,
                      episode: int, save_dir: str, headless: bool,
                      fps: int = 10, max_steps: int = 500,
                      step: int = 0) -> float:
@@ -100,7 +100,7 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
     import matplotlib.animation as animation
     from matplotlib.patches import Ellipse
 
-    obs_list = env.reset()
+    obs_list, _ = env.reset()  # Gymnasium: (obs, info)
     total_reward = np.zeros(env.num_uavs)
     frames = []
 
@@ -124,7 +124,8 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
             actions.append(action)
         actions = np.stack(actions)
 
-        obs_list, rewards, dones, info = env.step(actions)
+        obs_list, rewards, terminated, truncated, info = env.step(actions)
+        dones = terminated | truncated
         total_reward += rewards
 
         # Render every 6 steps to balance speed and smoothness
@@ -206,6 +207,13 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
                               color=color, markersize=15,
                               markeredgecolor="white", markeredgewidth=0.5)
 
+                # Communication range circle
+                comm_range = CONFIG["comm"]["range"]
+                comm_circle = plt.Circle((k.x, k.y), comm_range,
+                                         color=color, fill=False, linestyle='--',
+                                         alpha=0.4, linewidth=0.8)
+                ax_world.add_patch(comm_circle)
+
                 # Point cloud rays
                 ray_angles = np.linspace(-CONFIG["perception"]["fov"] / 2,
                                          CONFIG["perception"]["fov"] / 2,
@@ -232,18 +240,41 @@ def run_demo_episode(agent: DSACTAgent, env: MultiFixedWingEnv,
             ax_grid.set_xlabel("X (m)")
             ax_grid.set_ylabel("Y (m)")
 
-            # ---- Point Cloud (UAV 0) ----
+            # ---- Point Cloud + UAV Position (UAV 0) ----
             ax_pc.clear()
             pc = obs_list[0]["pointcloud"]
             angles = np.linspace(-CONFIG["perception"]["fov"] / 2,
                                   CONFIG["perception"]["fov"] / 2,
                                   len(pc))
-            ax_pc.plot(np.degrees(angles), pc, "b.-", linewidth=1)
-            ax_pc.set_title(f"Point Cloud (UAV 0)", fontsize=10)
+
+            # Plot point cloud distances
+            ax_pc.plot(np.degrees(angles), pc, "b.-", linewidth=1, label="Point Cloud")
+
+            # Mark UAV origin (center of the fan)
+            ax_pc.plot(0, 0, "ro", markersize=10, markeredgecolor="darkred",
+                       markeredgewidth=1.5, label="UAV Position")
+            ax_pc.axvline(0, color="red", alpha=0.3, linewidth=0.8, linestyle="--")
+
+            # Overlay UAV real-time position info as text box
+            uav0 = env.uavs[0]
+            k0 = uav0.kinematics
+            pos_text = (
+                f"UAV #0 Position\n"
+                f"X: {k0.x:5.1f} m  |  Y: {k0.y:5.1f} m\n"
+                f"Heading: {np.degrees(k0.psi):6.1f}°  |  Speed: {k0.v:.2f} m/s\n"
+                f"Goal Dist: {math.hypot(uav0.goal[0] - k0.x, uav0.goal[1] - k0.y):.1f} m"
+            )
+            ax_pc.text(0.05, 0.95, pos_text, transform=ax_pc.transAxes,
+                       fontsize=7, verticalalignment="top",
+                       bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat",
+                                 alpha=0.8, edgecolor="gray"))
+
+            ax_pc.set_title(f"Point Cloud + UAV Position (UAV 0)", fontsize=10)
             ax_pc.set_xlabel("Angle (deg)")
             ax_pc.set_ylabel("Distance (norm)")
             ax_pc.set_ylim(0, 1.1)
             ax_pc.grid(True, alpha=0.3)
+            ax_pc.legend(loc="lower right", fontsize=6)
 
             # ---- Stats ----
             ax_stats.clear()
@@ -340,16 +371,36 @@ def main():
 
     print(f"Loading checkpoint: {checkpoint_path}")
 
-    # Load agent
+    # Load agent + extract curriculum stage metadata
     agent = DSACTAgent()
-    agent.load_checkpoint(checkpoint_path)
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    agent.actor.load_state_dict(ckpt["actor"])
+    agent.critic.load_state_dict(ckpt["critic"])
+    agent.critic_target.load_state_dict(ckpt["critic_target"])
+    agent.temperature.load_state_dict(ckpt["temperature"])
+    agent.step = ckpt.get("step", 0)
+    agent.total_env_steps = ckpt.get("total_env_steps", 0)
     agent.actor.eval()
     agent.critic.eval()
 
-    print(f"Agent loaded (step {agent.step}) | Device: {agent.device}")
+    ckpt_stage = ckpt.get("curriculum_stage", 0)
+    stage_idx = args.stage if args.stage is not None else ckpt_stage
+    print(f"Agent loaded (step {agent.step}) | Device: {agent.device} | Stage: {stage_idx}")
 
-    # Create environment
-    env = MultiFixedWingEnv()
+    # Create environment matching the curriculum stage
+    stages = CONFIG.get("curriculum", {}).get("stages", [])
+    if stages and stage_idx < len(stages):
+        stage_cfg = stages[stage_idx]
+        env = MultiQuadrotorEnv(
+            num_uavs=stage_cfg["num_uavs"],
+            use_dynamic_obs=stage_cfg.get("dynamic_obs", True),
+            static_obstacles_enabled=stage_cfg.get("static_obstacles", True),
+        )
+        print(f"Env: stage={stage_cfg['name']} uavs={stage_cfg['num_uavs']} "
+              f"dyn_obs={stage_cfg.get('dynamic_obs', True)}")
+    else:
+        env = MultiQuadrotorEnv()
+        print(f"Env: default (no stage config found)")
 
     # Run demo episodes
     total_reward = 0

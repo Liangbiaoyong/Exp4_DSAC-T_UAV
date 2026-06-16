@@ -9,15 +9,13 @@ CONFIG = {
     "max_steps": 2000,
     "dt": 0.1,                     # physics timestep (s)
 
-    # UAV kinematics (fixed-wing bank-angle model)
+    # Quadrotor 2D point-mass model
     "uav": {
-        "v_min": 1.0,              # minimum speed (m/s)
-        "v_max": 5.0,              # maximum speed (m/s)
-        "v_cruise": 3.0,           # cruise speed
-        "max_bank_angle": 0.25,     # max roll angle (rad) ~14°
-        "a_th_max": 1.0,           # max throttle
-        "drag_coef": 0.1,          # drag coefficient
-        "g": 9.81,                 # gravitational acceleration (m/s²)
+        "max_speed": 8.0,          # maximum speed (m/s)
+        "max_acc": 6.0,            # maximum acceleration (m/s²)
+        "drag_coef": 0.1,          # drag coefficient F_drag = drag_coef * v²
+        "tau_acc": 0.15,           # acceleration 1st-order lag time constant (s)
+        "init_v": 0.0,             # initial speed (start from rest)
     },
 
     # Point-cloud perception
@@ -58,7 +56,7 @@ CONFIG = {
         "pointcloud_dim": 80,
         "grid_h": 160,
         "grid_w": 160,
-        "state_dim": 6,            # [v, psi, d_goal, theta_goal, delta, arrived_flag]
+        "state_dim": 6,            # [v_norm, sin(psi), cos(psi), d_goal_norm, theta_goal_norm, success_history]
         "dyn_obs_dim": 25,         # K=5 objects × 5 features
         "k_objects": 5,
         "object_feats": 5,         # [dx, dy, dvx, dvy, size]
@@ -68,17 +66,26 @@ CONFIG = {
     "reward": {
         "goal_reward": 10.0,
         "step_penalty": -0.01,
-        "collision_penalty_base": 5.0,   # C_coll
+        "collision_penalty_base": 20.0,   # C_coll
         "beta_init": 1.0,
-        "beta_increment": 0.1,           # per success
+        "beta_increment": 0.3,           # per success
         "goal_radius": 1.5,              # distance to consider goal reached
-        "guidance_scale": 0.1,           # guidance reward scale (dense shaping)
+        "guidance_scale": 0.3,           # guidance reward scale (dense shaping, was 0.1)
+        "heading_scale": 0.2,            # heading alignment reward weight (cos(Δθ)-1)
+        "beta_cap": 5.0,                 # collision penalty beta upper limit
     },
 
     # Collision
     "collision": {
         "uav_radius": 0.5,         # UAV physical radius (m)
         "obstacle_radius": 0.5,    # obstacle radius
+    },
+
+    # Communication-limited perception of other UAVs
+    "comm": {
+        "range": 20.0,               # communication sensing radius (m)
+        "noise_pos_std": 0.15,       # received position Gaussian noise std (m)
+        "noise_vel_std": 0.1,        # received velocity Gaussian noise std (m/s)
     },
 
     # Safe goal generation
@@ -95,6 +102,8 @@ CONFIG = {
         "cnn_kernel": 3,
         "cnn_stride": 2,
         "cnn_padding": 1,
+        "cnn_pool_size": [8, 8],       # spatial grid preserved at 8×8
+        "cnn_out_dim": 256,             # projected grid feature dimension
         "mlp_hidden": [128, 128],
         "fc_hidden": [256, 256],
         "action_dim": 2,
@@ -111,8 +120,8 @@ CONFIG = {
         "lr": 3e-4,
         "weight_decay": 1e-4,
         "batch_size": 256,
-        "buffer_capacity": 1_000_000,
-        "update_every": 50,         # env steps between updates
+        "buffer_capacity": 100_000,
+        "update_every": 200,         # env steps between updates
         "updates_per_step": 1,
         "c_val": 50.0,              # distribution truncation bound
         "critic_reg": 1e-5,         # critic L2 regularization
@@ -124,12 +133,12 @@ CONFIG = {
     # =========================================================================
     "train": {
         "num_envs": 16,
-        "total_steps": 10_000_000,
-        "save_interval_min": 10,
+        "total_steps": 5_000_000,
+        "save_interval_min": 5,
         "demo_interval_min": 5,     # render a demo clip every 5 minutes
         "log_interval": 100,        # steps between console logs
         "eval_episodes": 3,         # episodes per demo render
-        "eval_max_steps": 300,
+        "eval_max_steps": 1000,
     },
 
     # =========================================================================
@@ -151,5 +160,52 @@ CONFIG = {
         "checkpoint_dir": "checkpoints",
         "demo_clip_dir": "demo_clips",
         "log_dir": "logs",
+    },
+
+    # =========================================================================
+    # Curriculum Learning — staged training from easy to hard
+    # =========================================================================
+    "curriculum": {
+        "enabled": True,
+        "early_exit_min_steps": 100000,   # minimum steps before early exit can trigger
+        "stages": [
+            {
+                "name": "stage0_empty",
+                "num_uavs": 1,
+                "dynamic_obs": False,
+                "static_obstacles": False,      # no obstacles — pure goal-reaching
+                "total_steps": 300000,
+                "early_exit_avg_reward": 0.15,   # per-step avg; single UAV in empty world reaches ~0.12-0.20
+                "heading_scale": 0.3,            # strong heading reward in empty world
+            },
+            {
+                "name": "stage1_obstacles",
+                "num_uavs": 1,
+                "dynamic_obs": False,
+                "static_obstacles": True,
+                "total_steps": 500000,
+                "early_exit_avg_reward": 0.15,   # obstacles slow down goal arrival
+                "heading_scale": 0.0,
+            },
+            {
+                "name": "stage2_multi",
+                "num_uavs": 5,
+                "dynamic_obs": False,
+                "static_obstacles": True,
+                "total_steps": 1000000,
+                "early_exit_avg_reward": 0.15,   # collisions dilute reward
+                "heading_scale": 0.1,
+            },
+            {
+                "name": "stage3_dynamic",
+                "num_uavs": 5,
+                "dynamic_obs": True,
+                "static_obstacles": True,
+                "total_steps": 2000000,
+                "early_exit_avg_reward": 0.15,  # hardest — low exit bar
+                "heading_scale": 0.2,
+            },
+        ],
+        "current_stage": 0,               # default starting stage index
     },
 }

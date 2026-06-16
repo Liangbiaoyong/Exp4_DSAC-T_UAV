@@ -34,9 +34,28 @@ python train.py \
 
 | 目录 | 内容 | 生成频率 |
 |------|------|----------|
-| `checkpoints/` | 模型文件 model_YYYYMMDD_HHMMSS.pth | 每 10 分钟 |
-| `demo_clips/` | 演示视频 (.gif + .mp4) | 每 5 分钟 |
+| `checkpoints/` | 模型文件 model_step{step}_{YYYYMMDD_HHMMSS}.pth | 每 10 分钟（保留最近 10 个） |
+| `demo_clips/` | 演示视频 (.gif) | 每 5 分钟（保留最近 10 个） |
 | `logs/` | 训练日志 (.log) | 实时 |
+
+## 训练日志格式
+
+训练过程实时输出以下指标：
+
+```
+[timestamp] Step 100/500000 | Buffer: 500 | Alpha: 0.9997 | AvgReward: -0.040 | Collisions: 0 | Goals: 0 | Speed: 4 steps/s | Elapsed: 25s
+```
+
+| 字段 | 说明 |
+|------|------|
+| `Step` | 当前步数 / 总步数 |
+| `Buffer` | 经验回放缓冲区大小（uint8 压缩） |
+| `Alpha` | 温度系数（探索/利用平衡） |
+| `AvgReward` | 最近 100 步平均奖励 |
+| `Collisions` | 当前日志窗口内碰撞次数 |
+| `Goals` | 当前日志窗口内到达目标次数 |
+| `Speed` | 训练速度（steps/s） |
+| `Elapsed` | 已运行时间 |
 
 ## 演示渲染说明
 
@@ -79,3 +98,7 @@ python demo.py --no_render
 | `CONFIG["dsac_t"]` | 算法超参数 |
 | `CONFIG["train"]` | 训练参数 |
 | `CONFIG["demo"]` | 可视化参数 |
+
+## 随机种子
+
+训练默认使用 seed=42（固定 `random`、`numpy`、`torch`），保证实验结果可复现。如需不同随机序列，可在 `train.py` 中修改 `seed` 变量。

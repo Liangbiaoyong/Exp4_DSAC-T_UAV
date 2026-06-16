@@ -16,60 +16,94 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Union
-from collections import deque
-import random
-
 from config import CONFIG
 from networks import Actor, DistributedCritic, Temperature
 
 
 # =============================================================================
-#  Replay Buffer
+#  Replay Buffer — ring buffer backed by pre-allocated numpy arrays
 # =============================================================================
 
 class ReplayBuffer:
-    """Fixed-size replay buffer for experience replay."""
+    """Fixed-capacity ring buffer using pre-allocated numpy arrays.
+
+    Eliminates Python dict/tuple overhead from every transition,
+    reduces memory ~20 % and speeds up sampling.
+    """
 
     def __init__(self, capacity: int = None):
         self.capacity = capacity or CONFIG["dsac_t"]["buffer_capacity"]
-        self.buffer = deque(maxlen=self.capacity)
+        obs_cfg = CONFIG["obs"]
+        net_cfg = CONFIG["network"]
+
+        self.grid_h = obs_cfg["grid_h"]
+        self.grid_w = obs_cfg["grid_w"]
+        self.pc_dim = obs_cfg["pointcloud_dim"]
+        self.state_dim = obs_cfg["state_dim"]
+        self.dyn_dim = obs_cfg["dyn_obs_dim"]
+        self.action_dim = net_cfg["action_dim"]
+
+        # Pre-allocate flat arrays — one per field
+        cap = self.capacity
+        self._grid = np.zeros((cap, self.grid_h, self.grid_w), dtype=np.uint8)
+        self._next_grid = np.zeros((cap, self.grid_h, self.grid_w), dtype=np.uint8)
+        self._pc = np.zeros((cap, self.pc_dim), dtype=np.float32)
+        self._next_pc = np.zeros((cap, self.pc_dim), dtype=np.float32)
+        self._state = np.zeros((cap, self.state_dim), dtype=np.float32)
+        self._next_state = np.zeros((cap, self.state_dim), dtype=np.float32)
+        self._dyn = np.zeros((cap, self.dyn_dim), dtype=np.float32)
+        self._next_dyn = np.zeros((cap, self.dyn_dim), dtype=np.float32)
+        self._act = np.zeros((cap, self.action_dim), dtype=np.float32)
+        self._rew = np.zeros((cap, 1), dtype=np.float32)
+        self._done = np.zeros((cap, 1), dtype=np.float32)
+
+        self.pos = 0       # next write index
+        self.size = 0      # number of valid samples (< = capacity)
+        self.full = False
 
     def push(self, obs: Dict, action: np.ndarray, reward: float,
              next_obs: Dict, done: bool):
-        """Store a transition."""
-        self.buffer.append((obs, action, reward, next_obs, done))
+        """Store a transition (O(1) copy into pre-allocated slot)."""
+        idx = self.pos
+        self._grid[idx] = obs["grid_map"]
+        self._pc[idx] = obs["pointcloud"]
+        self._state[idx] = obs["self_state"]
+        self._dyn[idx] = obs["dynamic_obs"]
+        self._act[idx] = action
+        self._rew[idx] = reward
+        self._next_grid[idx] = next_obs["grid_map"]
+        self._next_pc[idx] = next_obs["pointcloud"]
+        self._next_state[idx] = next_obs["self_state"]
+        self._next_dyn[idx] = next_obs["dynamic_obs"]
+        self._done[idx] = float(done)
+
+        self.pos = (self.pos + 1) % self.capacity
+        if not self.full:
+            self.size += 1
+            if self.size == self.capacity:
+                self.full = True
 
     def sample(self, batch_size: int) -> Dict:
-        """Sample a batch of transitions. Returns dict of tensors."""
-        batch = random.sample(self.buffer, min(batch_size, len(self.buffer)))
-        batch_size = len(batch)
+        """Uniform-random sample; returns dict of tensors matching DSACTAgent.update()."""
+        n = self.capacity if self.full else self.size
+        idx = np.random.randint(0, n, size=batch_size)
 
-        # Extract components
-        obs_list = [item[0] for item in batch]
-        action_list = [item[1] for item in batch]
-        reward_list = [item[2] for item in batch]
-        next_obs_list = [item[3] for item in batch]
-        done_list = [item[4] for item in batch]
-
-        # Convert to tensors
-        batch_data = {
-            "grid_map": torch.stack([torch.from_numpy(o["grid_map"]).float().unsqueeze(0) for o in obs_list]),
-            "pointcloud": torch.stack([torch.from_numpy(o["pointcloud"]).float() for o in obs_list]),
-            "self_state": torch.stack([torch.from_numpy(o["self_state"]).float() for o in obs_list]),
-            "dynamic_obs": torch.stack([torch.from_numpy(o["dynamic_obs"]).float() for o in obs_list]),
-            "action": torch.stack([torch.from_numpy(np.array(a)).float() for a in action_list]),
-            "reward": torch.tensor(reward_list, dtype=torch.float32).unsqueeze(-1),
-            "next_grid_map": torch.stack([torch.from_numpy(n["grid_map"]).float().unsqueeze(0) for n in next_obs_list]),
-            "next_pointcloud": torch.stack([torch.from_numpy(n["pointcloud"]).float() for n in next_obs_list]),
-            "next_self_state": torch.stack([torch.from_numpy(n["self_state"]).float() for n in next_obs_list]),
-            "next_dynamic_obs": torch.stack([torch.from_numpy(n["dynamic_obs"]).float() for n in next_obs_list]),
-            "done": torch.tensor(done_list, dtype=torch.float32).unsqueeze(-1),
+        return {
+            "grid_map": torch.from_numpy(self._grid[idx].astype(np.float32) / 255.0).unsqueeze(1),
+            "pointcloud": torch.from_numpy(self._pc[idx]),
+            "self_state": torch.from_numpy(self._state[idx]),
+            "dynamic_obs": torch.from_numpy(self._dyn[idx]),
+            "action": torch.from_numpy(self._act[idx]),
+            "reward": torch.from_numpy(self._rew[idx]),
+            "next_grid_map": torch.from_numpy(self._next_grid[idx].astype(np.float32) / 255.0).unsqueeze(1),
+            "next_pointcloud": torch.from_numpy(self._next_pc[idx]),
+            "next_self_state": torch.from_numpy(self._next_state[idx]),
+            "next_dynamic_obs": torch.from_numpy(self._next_dyn[idx]),
+            "done": torch.from_numpy(self._done[idx]),
         }
 
-        return batch_data
-
     def __len__(self) -> int:
-        return len(self.buffer)
+        return self.capacity if self.full else self.size
 
 
 # =============================================================================
@@ -156,8 +190,12 @@ class DSACTAgent:
     def select_action(self, obs: Dict, deterministic: bool = False) -> np.ndarray:
         """Select action for a single observation (no batch dimension)."""
         with torch.no_grad():
+            # Handle uint8 compressed grid maps
+            grid_data = obs["grid_map"]
+            if isinstance(grid_data, np.ndarray) and grid_data.dtype == np.uint8:
+                grid_data = grid_data.astype(np.float32) / 255.0
             # Add batch dimension
-            grid = torch.from_numpy(obs["grid_map"]).float().unsqueeze(0).unsqueeze(0).to(self.device)
+            grid = torch.from_numpy(grid_data).float().unsqueeze(0).unsqueeze(0).to(self.device)
             pc = torch.from_numpy(obs["pointcloud"]).float().unsqueeze(0).to(self.device)
             state = torch.from_numpy(obs["self_state"]).float().unsqueeze(0).to(self.device)
             dyn = torch.from_numpy(obs["dynamic_obs"]).float().unsqueeze(0).to(self.device)
@@ -245,30 +283,40 @@ class DSACTAgent:
     def _quantile_huber_loss(self, z: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
         Quantile Huber loss for distributional RL.
+        Uses current network's tau_i as the quantile weight (not target's).
         z: (batch, num_quantiles)
         target: (batch, num_quantiles)
         """
         batch_size = z.size(0)
         num_quantiles = z.size(1)
 
-        # Tau values for each quantile (0 to 1)
-        tau = torch.linspace(0, 1, num_quantiles + 1, device=self.device)[:-1]
-        tau = tau.unsqueeze(0).expand(batch_size, -1)  # (batch, num_quantiles)
+        # Tau values for each quantile — use midpoints for better accuracy
+        # tau_i = (i + 0.5) / N  for i in [0, N-1]
+        tau = (torch.arange(num_quantiles, device=self.device) + 0.5) / num_quantiles
+        tau = tau.unsqueeze(0).unsqueeze(2)  # (1, N, 1)
 
-        # Pairwise difference: (batch, num_q, num_q)
-        diff = target.unsqueeze(2) - z.unsqueeze(1)  # target - z
+        # Pairwise difference: diff = target_j - z_i → (batch, N, N)
+        diff = target.unsqueeze(2) - z.unsqueeze(1)
 
-        # Huber loss
-        huber = F.smooth_l1_loss(z.unsqueeze(1).expand(-1, num_quantiles, -1),
-                                  target.unsqueeze(2).expand(-1, -1, num_quantiles),
-                                  reduction='none')
-        # We need |tau - I(diff < 0)| * huber
-        # I(diff < 0): indicator where target < z
+        # Huber loss for each pair (z_i, target_j)
+        huber = F.smooth_l1_loss(
+            z.unsqueeze(2).expand(-1, -1, num_quantiles),
+            target.unsqueeze(1).expand(-1, num_quantiles, -1),
+            reduction='none'
+        )  # (batch, N, N)
+
+        # I(diff < 0): 1 when target_j < z_i (prediction too high), 0 otherwise
         indicator = (diff < 0).float()
-        # Quantile weight
-        weight = torch.abs(tau.unsqueeze(2) - indicator)  # (batch, num_q, num_q)
 
-        loss = (weight * huber).sum(dim=(1, 2)).mean()
+        # Quantile weight: |tau_i - I(diff < 0)|
+        # Standard quantile regression: weight = tau when T > z (underestimate)
+        #                             weight = 1 - tau when T < z (overestimate)
+        weight = torch.abs(tau - indicator)  # (batch, N, N)
+
+        # Sum over all pairs, mean over batch, normalize by N²
+        # Without normalization, a single sample contributes ~N²=1024× the loss,
+        # causing gradient explosion even with gradient clipping
+        loss = (weight * huber).sum(dim=(1, 2)).mean() / (num_quantiles ** 2)
 
         return loss
 

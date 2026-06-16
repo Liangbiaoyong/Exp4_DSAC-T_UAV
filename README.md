@@ -30,7 +30,7 @@
 ```
 .
 ├── env/
-│   └── fixedwing_env.py      # Gym 环境：Box2D 物理 + 感知 + 建图 + 跟踪
+│   └── quadrotor_env.py      # Gym 环境：Box2D 物理 + 感知 + 建图 + 跟踪
 ├── docs/                      # 文档
 │   ├── architecture.md        # 系统架构说明
 │   └── training-guide.md      # 训练与调参指南

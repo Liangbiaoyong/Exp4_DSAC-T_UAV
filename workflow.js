@@ -52,7 +52,7 @@ await pipeline(
 );
 
 // ======================================================================
-// Phase 1  –  Environment  (fixedwing_env.py)
+// Phase 1  –  Environment  (quadrotor_env.py)
 // ======================================================================
 phase("Environment Implementation");
 
@@ -62,7 +62,7 @@ const envResults = await pipeline(
       label: "Env init & reset",
       test: async () => {
         const r = await agent(
-          'Run: python -c "from env.fixedwing_env import MultiFixedWingEnv; env = MultiFixedWingEnv(num_uavs=5); obs = env.reset(); print(type(obs).__name__, len(obs))" and report the result.'
+          'Run: python -c "from env.quadrotor_env import MultiQuadrotorEnv; env = MultiQuadrotorEnv(num_uavs=5); obs = env.reset(); print(type(obs).__name__, len(obs))" and report the result.'
         );
         if (!r || r.includes("Error") || r.includes("Traceback")) throw new Error("env init failed: " + r);
         return r;
@@ -72,7 +72,7 @@ const envResults = await pipeline(
       label: "100 random steps",
       test: async () => {
         const r = await agent(
-          'Run: python -c "from env.fixedwing_env import MultiFixedWingEnv; import numpy as np; env = MultiFixedWingEnv(num_uavs=5); env.reset(); [env.step(env.action_space.sample()) for _ in range(100)]; print(\'100 steps OK\')"'
+          'Run: python -c "from env.quadrotor_env import MultiQuadrotorEnv; import numpy as np; env = MultiQuadrotorEnv(num_uavs=5); env.reset(); [env.step(env.action_space.sample()) for _ in range(100)]; print(\'100 steps OK\')"'
         );
         if (!r || !r.includes("100 steps OK")) throw new Error("100-step test failed");
         return r;
@@ -82,7 +82,7 @@ const envResults = await pipeline(
       label: "Point cloud dims",
       test: async () => {
         const r = await agent(
-          'Run: python -c "from env.fixedwing_env import MultiFixedWingEnv; import numpy as np; env = MultiFixedWingEnv(num_uavs=5); obs=env.reset(); [obs,_,_,_]=env.step(env.action_space.sample()); pc=obs[0][\'pointcloud\']; print(pc.shape, np.all(pc>=0))"'
+          'Run: python -c "from env.quadrotor_env import MultiQuadrotorEnv; import numpy as np; env = MultiQuadrotorEnv(num_uavs=5); obs=env.reset(); [obs,_,_,_]=env.step(env.action_space.sample()); pc=obs[0][\'pointcloud\']; print(pc.shape, np.all(pc>=0))"'
         );
         if (!r) throw new Error("point cloud check failed");
         return r;

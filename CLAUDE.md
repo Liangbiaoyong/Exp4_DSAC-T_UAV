@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-### 多固定翼无人机点云避障与最速寻路（DSAC-T + Box2D）
+### 多四旋翼无人机点云避障与最速寻路（DSAC-T）
 
-A multi-UAV obstacle avoidance and shortest-path navigation system in a 50×50m 2D continuous space. Five fixed-wing UAVs with forward-facing fan-shaped point-cloud perception must navigate to random goals without global maps, using onboard point-cloud mapping and dynamic object tracking. The core algorithm is **DSAC-T** (Distributed Soft Actor-Critic with Three Refinements).
+A multi-UAV obstacle avoidance and shortest-path navigation system in a 50×50m 2D continuous space. Five quadrotor UAVs with forward-facing fan-shaped point-cloud perception must navigate to random goals without global maps, using onboard point-cloud mapping and dynamic object tracking. The core algorithm is **DSAC-T** (Distributed Soft Actor-Critic with Three Refinements).
 
 ## Project Structure
 
 ```text
 .
 ├── env/
-│   └── fixedwing_env.py      # Gym environment: kinematics, point cloud, mapping, tracking
+│   └── quadrotor_env.py      # Gymnasium env: quadrotor kinematics, perception, mapping, tracking
 ├── docs/                      # Documentation
 │   ├── architecture.md        # System architecture
 │   └── training-guide.md      # Training & tuning guide
@@ -34,33 +34,33 @@ A multi-UAV obstacle avoidance and shortest-path navigation system in a 50×50m 
 
 **Do not change these without discussing with the user first and updating this file:**
 
-- **Physics engine**: Box2D via a custom Gym environment wrapper.
-- **UAV kinematics**: Fixed-wing bank-angle turn model. Turn rate `psi_dot = g * tan(phi) / v` (inverse proportional to speed, physically correct). Turn radius `r = v² / (g * tan(phi))` (∝ v²). Max bank angle 0.25 rad (~14°).
-- **Perception**: 120° forward fan, 60 rays with exponential detection probability and Gaussian noise, plus ghost points (0.5% probability). World boundaries (walls) are detected as obstacles.
-- **Local mapping**: 40×40m occupancy grid at 0.25m resolution (160×160), updated via Bresenham line-of-sight. Shifts with UAV.
+- **Physics engine**: Custom Gym environment (Gymnasium).
+- **UAV kinematics**: Quadrotor 2D point-mass model. Control: desired body acceleration [ax, ay] ∈ [-1,1]. Physics: 1st-order inertial lag (tau=0.15s) simulating motor response, quadratic air drag, speed clamped at 8 m/s, max acceleration 6 m/s². UAVs start from rest.
+- **Perception**: 120° forward fan, 80 rays with exponential detection probability and Gaussian noise, plus ghost points (0.2% probability). World boundaries (walls) are detected as obstacles.
+- **Local mapping**: 40×40m occupancy grid at 0.25m resolution (160×160), updated via Bresenham line-of-sight. Shifts with UAV (rolled edges cleared to 0.5).
 - **Dynamic tracking**: DBSCAN clustering → Kalman filter (constant velocity) → Hungarian matching.
 - **Algorithm**: DSAC-T (distributed critic with quantile distribution, 32 quantiles). Actor outputs Gaussian policy squashed through Tanh.
-- **Reward**: `r = step_penalty + guidance_reward + goal_reward + collision_penalty`. Guidance reward (0.1 × distance delta) provides dense shaping signal. +10 for goal, -0.01 per step, -C_coll * beta for collision. Beta increases with success count.
+- **Reward**: `r = step_penalty + guidance_reward + goal_reward + collision_penalty`. Guidance reward (0.3 × distance delta) provides dense shaping signal. +10 for goal, -0.01 per step, -C_coll * beta for collision. Beta capped at 5.0.
 - **Temperature alpha**: Learned via gradient descent. Controls explore/exploit trade-off. High (~1.0) = exploratory, low (~0.1) = deterministic.
-- **Collision handling**: Collided UAV resets in-place (new random position, goal unchanged); episode continues for other UAVs. Boundary contact also counts as collision. Max 2000 steps.
+- **Collision handling**: Collided UAV resets to random safe position (goal unchanged), occupancy grid cleared. Boundary contact also counts as collision. Max 2000 steps.
 - **Safe goal placement**: New goals placed ≥3m from obstacles and ≥3m from world boundaries.
-- **Training**: AdamW (lr=3e-4, weight decay 1e-4), batch 256, replay buffer 1e6, update every 50 env steps, gamma=0.99.
-- **Checkpoint**: Every 10 min auto-save to `./checkpoints/model_YYYYMMDD_HHMMSS.pth`. Resume via `--resume`.
-- **Demo rendering**: Every 5 min during training, auto-renders a demo clip to `demo_clips/`.
+- **Training**: AdamW (lr=3e-4, weight decay 1e-4), batch 256, replay buffer 1e5 (uint8 compressed), update every 50 env steps, gamma=0.99.
+- **Checkpoint**: Every 10 min auto-save to `./checkpoints/model_step{step}_{YYYYMMDD_HHMMSS}.pth` (keeps latest 10). Auto-resume from latest checkpoint on start.
+- **Demo rendering**: Every 5 min during training, auto-renders a demo clip (1 episode) to `demo_clips/`.
 
 ## Architecture Details
 
-### Environment (fixedwing_env.py)
+### Environment (quadrotor_env.py)
 
-- **Fixed-wing kinematics**: Bank-angle turn model (real fixed-wing physics). Turn rate `psi_dot = g * tan(phi) / v`. State: (x, y, psi, v). Control: throttle a_th ∈ [-1,1], bank angle delta ∈ [-1,1] → scaled to max_bank_angle.
-- **Point cloud**: 60 rays in 120° FOV. Each ray: detection prob = exp(-d/D0), noise N(0, k*d), ghost points at P=0.005. World boundaries (walls) detected as obstacles.
-- **Local occupancy grid**: 160×160 grid (40m × 40m, 0.25m/cell). Bresenham update: -0.1 free / +0.3 occupied, clamped [0,1]. Shifts with UAV.
+- **Quadrotor kinematics**: 2D point-mass model with realistic physics. State: (x, y, vx, vy, ax_actual, ay_actual). Control: desired body acceleration [ax, ay] ∈ [-1,1] → scaled to max_acc (6 m/s²). 1st-order inertial lag (tau=0.15s) on acceleration. Quadratic air drag. Speed clamped at max_speed (8 m/s). Heading `psi` derived from velocity direction.
+- **Point cloud**: 80 rays in 120° FOV. Each ray: detection prob = exp(-d/D0) with D0=10 (was 5), noise N(0, k*d) with k=0.05 (halved), ghost points at P=0.002 (reduced). World boundaries (walls) detected as obstacles.
+- **Local occupancy grid**: 160×160 grid (40m × 40m, 0.25m/cell). Bresenham update: -0.08 free / +0.5 occupied, clamped [0,1]. Shifts with UAV (rolled edges cleared to 0.5).
 - **Dynamic tracking**: DBSCAN (eps=0.5, min_samples=3) → Kalman filter (constant velocity, state [x,y,vx,vy]) → Hungarian matching (Mahalanobis distance). Lost >2 frames → delete.
-- **Collision detection**: UAV-UAV, UAV-obstacle, and **UAV-boundary** collisions are all detected. Collided UAV reset in-place with random perturbation.
+- **Collision detection**: UAV-UAV, UAV-obstacle, and **UAV-boundary** collisions are all detected. Collided UAV reset to random safe position (goal unchanged), occupancy grid cleared.
 
 ### Networks (networks.py)
 
-- **Actor**: CNN (3 layers: 32→64→64, 3×3, stride 2, ReLU) for 160×160×1 grid map + MLP (128→128) for concatenated [point cloud(60), state(6), obstacles(25)]. Combined → FC 256→256 → mu/sigma heads → Tanh squashed Gaussian.
+- **Actor**: CNN (3 layers: 32→64→64, 3×3, stride 2, ReLU) for 160×160×1 grid map + MLP (128→128) for concatenated [point cloud(80), state(6), obstacles(25)]. Combined → FC 256→256 → mu/sigma heads → Tanh squashed Gaussian.
 - **Distributed Critic**: Same CNN for grid map, action concatenated before final FC layers. Outputs 32 quantile values for return distribution Z(s,a).
 - **Temperature alpha**: Learned log_alpha parameter.
 
@@ -76,14 +76,14 @@ Three Refinements:
 
 | Component         | Dim     | Description                                                       |
 |-------------------|---------|-------------------------------------------------------------------|
-| Point cloud       | 60      | Normalized distance values (0~1)                                  |
+| Point cloud       | 80      | Normalized distance values (0~1)                                  |
 | Grid map          | 160×160 | Occupancy probabilities                                           |
-| Self state        | 6       | [v, psi, d_goal, theta_goal, delta, arrived_flag]                 |
+| Self state        | 6       | [v_norm, sin(psi), cos(psi), d_goal_norm, theta_goal_norm, success_history]                 |
 | Dynamic obstacles | 25      | Nearest K=5 objects, each [dx, dy, dvx, dvy, size], zero-padded   |
 
 ### Action Space
 
-2D continuous: [a_th, delta] ∈ [-1, 1].
+2D continuous: [ax, ay] ∈ [-1, 1].
 
 ## Commands
 
@@ -119,7 +119,7 @@ All hyperparameters live in `config.py` as a single `CONFIG` dictionary. Default
 
 ```
 .
-├── env/                  # Environment module (fixedwing_env.py only)
+├── env/                  # Environment module (quadrotor_env.py only)
 ├── docs/                 # Documentation markdown files
 ├── references/           # Reference PDFs and external materials
 ├── checkpoints/          # Model checkpoints (gitignored)
@@ -133,16 +133,19 @@ All hyperparameters live in `config.py` as a single `CONFIG` dictionary. Default
 ### Source Code Rules
 
 - **Core Python modules** go in the project root: `config.py`, `networks.py`, `dsac_t.py`, `train.py`, `demo.py`
-- **Environment code** goes in `env/fixedwing_env.py` — do not create additional files in `env/`
+- **Environment code** goes in `env/quadrotor_env.py` — do not create additional files in `env/`
 - **No notebook files** — this project uses standalone Python scripts
 - **No `src/` or `lib/` directories** — keep root clean
 
 ### Documentation Rules
 
 - All documentation goes in `docs/` as Markdown files
-- Keep docs synced with code changes — when adding a feature, update the relevant doc
+- **Documentation must be updated in the same commit as the code change** — no "update docs later"
 - Major architectural changes must be reflected in `docs/architecture.md`
 - New commands or config options go in `docs/training-guide.md`
+- Config changes (add/modify keys in `config.py`) must update the relevant config table in docs
+- Parameter value changes (e.g. num_rays, buffer_capacity, lr) must sync `CLAUDE.md` and `docs/architecture.md`
+- When fixing a bug, check if the fix changes any documented behavior and update accordingly
 
 ### Reference Material Rules
 

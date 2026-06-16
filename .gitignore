@@ -19,6 +19,11 @@ checkpoints/
 demo_clips/
 logs/
 
+# Utilities and generated text dumps
+PyToTxt.py
+output_py_files.txt
+training_output.log
+
 # OS
 .DS_Store
 Thumbs.db

@@ -18,8 +18,18 @@ from config import CONFIG
 # =============================================================================
 
 class CNNEncoder(nn.Module):
-    """3-layer CNN for occupancy grid encoding."""
-    def __init__(self, in_channels: int = 1):
+    """3-layer CNN for occupancy grid encoding with FiLM modulation.
+
+    FiLM (Feature-wise Linear Modulation) injects goal-direction and speed
+    information into spatial features, preventing the grid features from
+    drowning out the scalar goal-bearing signal.
+
+    Uses 8×8 spatial pool + projection to preserve spatial layout while
+    reducing dimension — enables the network to associate dynamic obstacle
+    vectors with specific grid regions for static/dynamic discrimination.
+    Output: 256-dim (configurable via CONFIG["network"]["cnn_out_dim"]).
+    """
+    def __init__(self, in_channels: int = 1, film_input_dim: int = 3):
         super().__init__()
         cfg = CONFIG["network"]["cnn_channels"]  # [1, 32, 64, 64]
         self.layers = nn.ModuleList()
@@ -32,24 +42,64 @@ class CNNEncoder(nn.Module):
                 nn.ReLU(inplace=True),
             ))
 
-        # Compute flattened size after CNN
-        with torch.no_grad():
-            dummy = torch.zeros(1, in_channels,
-                                CONFIG["obs"]["grid_h"],
-                                CONFIG["obs"]["grid_w"])
-            for layer in self.layers:
-                dummy = layer(dummy)
-            self.cnn_feat_dim = dummy.view(1, -1).size(1)
+        n_final_channels = cfg[-1]  # 64
 
-    def forward(self, grid_map: torch.Tensor) -> torch.Tensor:
+        # FiLM generator: scalar goal/speed info → channel-wise γ, β
+        self.film = nn.Sequential(
+            nn.Linear(film_input_dim, 32),
+            nn.ReLU(inplace=True),
+            nn.Linear(32, n_final_channels * 2),
+        )
+
+        # Pooled grid resolution (8×8 preserves spatial layout)
+        self.pool_size = CONFIG["network"].get("cnn_pool_size", (8, 8))
+        out_dim = CONFIG["network"]["cnn_out_dim"]
+
+        # Compute pooled feature dim
+        with torch.no_grad():
+            dummy_grid = torch.zeros(1, in_channels,
+                                     CONFIG["obs"]["grid_h"],
+                                     CONFIG["obs"]["grid_w"])
+            dummy_film = torch.zeros(1, film_input_dim)
+            for layer in self.layers:
+                dummy_grid = layer(dummy_grid)
+            film_out = self.film(dummy_film)
+            gamma, beta = torch.split(film_out, n_final_channels, dim=-1)
+            gamma = gamma.unsqueeze(-1).unsqueeze(-1)
+            beta = beta.unsqueeze(-1).unsqueeze(-1)
+            dummy_grid = gamma * dummy_grid + beta
+            dummy_grid = F.adaptive_avg_pool2d(dummy_grid, self.pool_size)
+            n_flat = dummy_grid.view(1, -1).size(1)
+        self.proj = nn.Linear(n_flat, out_dim)
+        self.cnn_feat_dim = out_dim
+
+        # Match Actor/Critic init convention
+        nn.init.xavier_uniform_(self.proj.weight, gain=1.0)
+        if self.proj.bias is not None:
+            nn.init.zeros_(self.proj.bias)
+
+    def forward(self, grid_map: torch.Tensor,
+                film_inputs: torch.Tensor) -> torch.Tensor:
         """
         grid_map: (batch, 1, H, W)
-        returns: (batch, cnn_feat_dim)
+        film_inputs: (batch, film_input_dim) — scalar conditioning signals
+        returns: (batch, cnn_out_dim) — spatially-aware grid features
         """
         x = grid_map
         for layer in self.layers:
             x = layer(x)
-        return x.view(x.size(0), -1)
+
+        # FiLM modulation: inject goal-direction awareness into spatial features
+        film = self.film(film_inputs)                         # (batch, 128)
+        gamma, beta = torch.split(film, x.size(1), dim=-1)   # each (batch, 64)
+        gamma = gamma.unsqueeze(-1).unsqueeze(-1)             # (batch, 64, 1, 1)
+        beta = beta.unsqueeze(-1).unsqueeze(-1)
+        x = gamma * x + beta                                  # channel-wise scale+shift
+
+        x = F.adaptive_avg_pool2d(x, self.pool_size)          # preserve spatial layout
+        x = x.flatten(1)
+        x = self.proj(x)
+        return x
 
 
 # =============================================================================
@@ -62,7 +112,7 @@ class Actor(nn.Module):
 
     Inputs:
         grid_map: (batch, 1, 160, 160)
-        pointcloud: (batch, 60)
+        pointcloud: (batch, 80)
         self_state: (batch, 6)
         dynamic_obs: (batch, 25)
 
@@ -114,17 +164,30 @@ class Actor(nn.Module):
         for m in self.modules():
             if isinstance(m, (nn.Linear, nn.Conv2d)):
                 if hasattr(m, 'weight') and m.weight is not None:
-                    nn.init.xavier_uniform_(m.weight, gain=0.01)
+                    nn.init.xavier_uniform_(m.weight, gain=1.0)
                 if hasattr(m, 'bias') and m.bias is not None:
                     nn.init.zeros_(m.bias)
+
+    def _build_film_inputs(self, self_state: torch.Tensor) -> torch.Tensor:
+        """Build FiLM conditioning signals from self_state.
+        self_state: [v_norm, sin(psi), cos(psi), d_goal_norm, theta_goal_norm, success_history]
+        Returns: (batch, 3) — [sin(θ_goal), cos(θ_goal), v_norm]
+        """
+        theta_goal = self_state[:, 4] * math.pi  # un-normalize from [-1,1] to [-π,π]
+        return torch.stack([
+            torch.sin(theta_goal),
+            torch.cos(theta_goal),
+            self_state[:, 0],  # v_norm
+        ], dim=-1)
 
     def forward(self, grid_map: torch.Tensor, pointcloud: torch.Tensor,
                 self_state: torch.Tensor, dynamic_obs: torch.Tensor):
         """
         Returns: (mu, sigma) where mu, sigma are each (batch, action_dim).
         """
-        # CNN encoding
-        grid_feat = self.cnn(grid_map)
+        # CNN encoding with FiLM: goal direction modulates spatial features
+        film_inputs = self._build_film_inputs(self_state)
+        grid_feat = self.cnn(grid_map, film_inputs)
 
         # MLP encoding
         vec_feat = self.mlp(torch.cat([pointcloud, self_state, dynamic_obs], dim=-1))
@@ -225,6 +288,18 @@ class DistributedCritic(nn.Module):
                 if hasattr(m, 'bias') and m.bias is not None:
                     nn.init.zeros_(m.bias)
 
+    def _build_film_inputs(self, self_state: torch.Tensor) -> torch.Tensor:
+        """Build FiLM conditioning signals from self_state.
+        self_state: [v_norm, sin(psi), cos(psi), d_goal_norm, theta_goal_norm, success_history]
+        Returns: (batch, 3) — [sin(θ_goal), cos(θ_goal), v_norm]
+        """
+        theta_goal = self_state[:, 4] * math.pi
+        return torch.stack([
+            torch.sin(theta_goal),
+            torch.cos(theta_goal),
+            self_state[:, 0],  # v_norm
+        ], dim=-1)
+
     def forward(self, grid_map: torch.Tensor, pointcloud: torch.Tensor,
                 self_state: torch.Tensor, dynamic_obs: torch.Tensor,
                 action: torch.Tensor) -> tuple:
@@ -232,14 +307,15 @@ class DistributedCritic(nn.Module):
         Returns: (z1, z2) each (batch, num_quantiles) from twin critics.
         """
         vec = torch.cat([pointcloud, self_state, dynamic_obs, action], dim=-1)
+        film_inputs = self._build_film_inputs(self_state)
 
         # Critic 1
-        grid_feat1 = self.cnn1(grid_map)
+        grid_feat1 = self.cnn1(grid_map, film_inputs)
         vec_feat1 = self.mlp1(vec)
         z1 = self.fc1(torch.cat([grid_feat1, vec_feat1], dim=-1))
 
         # Critic 2
-        grid_feat2 = self.cnn2(grid_map)
+        grid_feat2 = self.cnn2(grid_map, film_inputs)
         vec_feat2 = self.mlp2(vec)
         z2 = self.fc2(torch.cat([grid_feat2, vec_feat2], dim=-1))
 

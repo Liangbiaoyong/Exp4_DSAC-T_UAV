@@ -4,7 +4,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     MultiFixedWingEnv                        │
+│                     MultiQuadrotorEnv                        │
 │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌──────────┐ │
 │  │  UAV 0    │  │  UAV 1    │  │  ...      │  │  UAV 4   │ │
 │  │ Kinematics │  │ Kinematics │  │           │  │ Kinematics│ │
@@ -33,7 +33,7 @@
 │  └─────────────┘  └──────────────────┘  └───────────────┘  │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │              Replay Buffer (1M capacity)              │   │
+│  │              Replay Buffer (100K, uint8)              │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                             │
 │  三项优化:                                                  │
@@ -45,16 +45,16 @@
 
 ## 模块职责
 
-### 1. 环境层 (`env/fixedwing_env.py`)
+### 1. 环境层 (`env/quadrotor_env.py`)
 
 | 类 | 职责 |
 |---|------|
-| `FixedWingKinematics` | 滚转转弯模型: psi_dot = g·tan(φ)/v (x, y, psi, v) → 状态更新 |
+| `Quadrotor2DKinematics` | 四旋翼点质量模型: 惯性延迟 + 二次阻力 + 限速 (x, y, vx, vy, ax, ay) → 状态更新 |
 | `PointCloudPerception` | 120° 扇形射线 → 指数衰减概率 → 高斯噪声 → 鬼点 |
 | `OccupancyGrid` | 160×160 栅格 → Bresenham 更新 → 随 UAV 移动 |
 | `KalmanFilterCV` | 恒定速度卡尔曼滤波 (x, y, vx, vy) |
 | `UAVAgent` | 单架无人机的状态、感知、建图聚合 |
-| `MultiFixedWingEnv` | Gym 环境：重置、步进、碰撞检测、奖励计算 |
+| `MultiQuadrotorEnv` | Gym 环境：重置、步进、碰撞检测、奖励计算 |
 
 ### 2. 网络层 (`networks.py`)
 
@@ -69,7 +69,7 @@
 
 | 类 | 职责 |
 |---|------|
-| `ReplayBuffer` | 固定容量经验回放 (1M) |
+| `ReplayBuffer` | 固定容量经验回放 (100K, uint8 压缩) |
 | `DSACTAgent` | 算法主控：select_action / update / save / load |
 
 ### 4. 训练层 (`train.py`)
@@ -116,6 +116,23 @@ UAV 感知 → 点云 + 栅格 + 状态 → Actor → 动作
 - 每 **远离目标 1m** → -0.1 惩罚
 
 UAV 在收到稀疏的 +10 目标奖励之前，就能通过导向奖励学习趋近目标行为。
+
+## 碰撞处理
+
+碰撞后 UAV 不会结束 episode，而是**就地重置到随机安全位置**（目标保持不变）：
+
+1. 施加碰撞惩罚 `-C_coll × β`（β 随成功次数递增）
+2. 尝试 50 次在安全区域生成新位置（避开障碍物边界）
+3. 重置位置、随机航向、巡航速度
+4. 清除占用栅格（避免旧地图干扰）
+5. 重新计算到目标的距离（防止导向奖励跳变）
+
+## 经验回放缓冲区
+
+- 容量：**100K** transition（原为 1M，实测可用）
+- 内存压缩：grid_map 以 **uint8** 存储（乘 255），取出时除以 255 恢复 float32
+  - 单条 transition：~26.5 KB（grid_map 26KB + 其余）
+  - 总内存：~2.65 GB（可运行）
 
 ### Alpha（温度系数）
 
