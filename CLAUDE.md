@@ -203,3 +203,10 @@ git add <files>
 git commit -m "feat: description of change"
 git push
 ```
+
+## Safety Rules
+
+**MUST FOLLOW — do not bypass:**
+
+- **File operations safety**: Before running any wildcard `rm`, `rm -rf`, `git clean`, or other destructive file operations on untracked/generated directories (e.g., `checkpoints/`, `demo_clips/`, `logs/`), you MUST first inspect the directory contents with `ls -la` to confirm what files exist and will be affected. If user-generated training artifacts (checkpoints, logs, demo clips) are present, ask the user before deleting any of them.
+- **No silent cleanup**: Do not delete files matching user-generated patterns (`model_*.pth`, `demo_*.gif`, `train_*.log`) without either explicit user confirmation or a prior rule explicitly authorizing it (e.g., `cleanup_old_files` is authorized because its keep-limit is a designed feature).
