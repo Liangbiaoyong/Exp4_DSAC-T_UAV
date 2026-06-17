@@ -504,11 +504,18 @@ class UAVAgent:
         """
         k = self.kinematics
 
-        # Point cloud
-        ranges = self.perception.sense(k.x, k.y, k.psi, obstacles, world_size)
+        # 将其他 UAV 作为圆形障碍物加入射线检测，使点云和占据栅格能感知动态无人机
+        all_obstacles = list(obstacles)
+        if other_uav_states:
+            uav_radius = CONFIG["collision"]["uav_radius"]
+            for (ox, oy, ovx, ovy) in other_uav_states:
+                all_obstacles.append(np.array([ox, oy, uav_radius]))
+
+        # Point cloud (now includes other UAVs as obstacles)
+        ranges = self.perception.sense(k.x, k.y, k.psi, all_obstacles, world_size)
         pc_normalized = ranges / CONFIG["perception"]["max_range"]
 
-        # Occupancy grid (shift to UAV center)
+        # Occupancy grid (shift to UAV center) — also includes other UAV occlusions
         self.occupancy.shift(k.x, k.y)
         self.occupancy.update(
             k.x, k.y, ranges, self.perception.ray_angles,

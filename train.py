@@ -29,6 +29,7 @@ from typing import Optional, Dict, List, Tuple
 from config import CONFIG
 from env.quadrotor_env import MultiQuadrotorEnv
 from dsac_t import DSACTAgent, ReplayBuffer
+from demo import run_demo_episode
 
 
 # =============================================================================
@@ -119,136 +120,6 @@ def load_checkpoint_with_curriculum(agent: DSACTAgent, path: str) -> Dict:
 # =============================================================================
 #  Demo rendering
 # =============================================================================
-
-def render_demo_clip(agent: DSACTAgent, env: MultiQuadrotorEnv,
-                     episode: int, save_dir: str, max_steps: int = 500,
-                     step: int = 0, stage_name: str = ""):
-    """
-    Render a demo clip showing UAV navigation.
-    Saves frames as a GIF using matplotlib animation.
-    """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import matplotlib.animation as animation
-
-    fig, axes = plt.subplots(1, 2, figsize=CONFIG["demo"]["fig_size"])
-    ax_map, ax_pc = axes
-
-    obs_list, _ = env.reset()
-    frames = []
-    total_reward = np.zeros(env.num_uavs)
-
-    for _step in range(max_steps):
-        actions = []
-        for uav_obs in obs_list:
-            action = agent.select_action(uav_obs, deterministic=True)
-            actions.append(action)
-        actions = np.stack(actions)
-
-        obs_list, rewards, terminated, truncated, info = env.step(actions)
-        dones = terminated | truncated
-        total_reward += rewards
-
-        if _step % 10 == 0:
-            ax_map.clear()
-            ax_map.set_xlim(0, env.world_size)
-            ax_map.set_ylim(0, env.world_size)
-            ax_map.set_aspect("equal")
-            ax_map.set_title(f"{stage_name} — Step {_step}")
-
-            for obs in env.static_obstacles:
-                circle = plt.Circle((obs[0], obs[1]), obs[2], color="gray", alpha=0.5)
-                ax_map.add_patch(circle)
-
-            colors = ["red"] + [plt.cm.tab10(i / max(env.num_uavs - 1, 1))
-                                for i in range(1, env.num_uavs)]
-            for i, uav in enumerate(env.uavs):
-                k = uav.kinematics
-                color = colors[i]
-
-                if len(uav.path_history) > 1:
-                    path = np.array(list(uav.path_history))
-                    ax_map.plot(path[:, 0], path[:, 1], color=color, alpha=0.5, linewidth=1)
-
-                ax_map.plot(k.x, k.y, "o", color=color, markersize=8, label=f"UAV {i}")
-
-                arrow_len = 1.5
-                ax_map.arrow(k.x, k.y,
-                             arrow_len * np.cos(k.psi),
-                             arrow_len * np.sin(k.psi),
-                             head_width=0.3, color=color, alpha=0.8)
-
-                ax_map.plot(uav.goal[0], uav.goal[1], "*", color=color, markersize=12)
-
-                # Communication range circle
-                comm_range = CONFIG["comm"]["range"]
-                comm_circle = plt.Circle((k.x, k.y), comm_range,
-                                         color=color, fill=False, linestyle='--',
-                                         alpha=0.4, linewidth=0.8)
-                ax_map.add_patch(comm_circle)
-
-                ray_angles = np.linspace(-CONFIG["perception"]["fov"] / 2,
-                                         CONFIG["perception"]["fov"] / 2,
-                                         CONFIG["perception"]["num_rays"])
-                pc = uav_obs["pointcloud"] * CONFIG["perception"]["max_range"]
-                for j, (r, angle) in enumerate(zip(pc, ray_angles)):
-                    if r < CONFIG["perception"]["max_range"] - 0.1:
-                        ray_angle = k.psi + angle
-                        ex = k.x + r * np.cos(ray_angle)
-                        ey = k.y + r * np.sin(ray_angle)
-                        ax_map.plot([k.x, ex], [k.y, ey], color=color, alpha=0.15, linewidth=0.5)
-
-            ax_map.legend(loc="upper right", fontsize=8)
-
-            ax_pc.clear()
-            grid = obs_list[0]["grid_map"]
-            ax_pc.imshow(grid, cmap="hot_r", origin="lower",
-                         extent=(0, CONFIG["grid"]["size"],
-                                 CONFIG["grid"]["size"], 0))
-            ax_pc.set_title("Occupancy Grid (UAV 0)")
-            ax_pc.set_xlabel("X (m)")
-            ax_pc.set_ylabel("Y (m)")
-
-            uav0 = env.uavs[0]
-            k0 = uav0.kinematics
-            grid_ox = uav0.occupancy.origin_x
-            grid_oy = uav0.occupancy.origin_y
-            gx = k0.x - grid_ox
-            gy = k0.y - grid_oy
-            if 0 <= gx <= CONFIG["grid"]["size"] and 0 <= gy <= CONFIG["grid"]["size"]:
-                ax_pc.plot(gx, gy, "ro", markersize=6, markeredgecolor="white")
-            pos_txt = f"UAV0: ({k0.x:.1f}, {k0.y:.1f})m  " \
-                       f"heading:{np.degrees(k0.psi):.0f}deg  v:{k0.v:.1f}m/s"
-            ax_pc.text(0.5, -0.12, pos_txt, transform=ax_pc.transAxes,
-                       fontsize=7, ha="center", va="top",
-                       bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8))
-
-            plt.tight_layout()
-            fig.canvas.draw()
-            frame = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8)
-            frame = frame.reshape(fig.canvas.get_width_height()[::-1] + (4,))
-            frame = frame[:, :, 1:]
-            frames.append(frame)
-
-        if all(dones):
-            break
-
-    if frames:
-        import imageio
-        os.makedirs(save_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        prefix = f"{stage_name}_" if stage_name else ""
-        gif_path = os.path.join(save_dir, f"demo_{prefix}ep{episode}_step{step}_{timestamp}.gif")
-        imageio.mimsave(gif_path, frames, fps=CONFIG["demo"]["fps"])
-        print(f"  Demo clip saved: {gif_path} ({len(frames)} frames)")
-
-    plt.close(fig)
-
-    mean_reward = total_reward.mean()
-    print(f"  Demo episode {episode}: mean reward = {mean_reward:.2f}")
-    return mean_reward
-
 
 # =============================================================================
 #  File management
@@ -443,10 +314,15 @@ def run_stage_training(agent: DSACTAgent, stage: Dict, stage_idx: int,
                 try:
                     demo_env = make_env(stage)
                     for ep in range(1):
-                        render_demo_clip(agent, demo_env, ep + 1,
-                                         demo_clip_dir, CONFIG["train"]["eval_max_steps"],
-                                         step=agent.total_env_steps,
-                                         stage_name=stage_name)
+                        run_demo_episode(
+                            agent, demo_env, ep + 1,
+                            demo_clip_dir,
+                            headless=True,
+                            fps=CONFIG["demo"]["fps"],
+                            max_steps=CONFIG["train"]["eval_max_steps"],
+                            step=agent.total_env_steps,
+                            stage_name=stage_name,
+                        )
                     demo_env.close()
                     log_fn("  Demo clip rendered (1 episode)")
                     cleanup_old_files(demo_clip_dir, "demo_*.gif", keep=10)
@@ -598,10 +474,15 @@ def train():
         try:
             demo_env = make_env(stage)
             for ep in range(1):
-                render_demo_clip(agent, demo_env, ep + 1,
-                                 demo_clip_dir, CONFIG["train"]["eval_max_steps"],
-                                 step=agent.total_env_steps,
-                                 stage_name=stage_name)
+                run_demo_episode(
+                    agent, demo_env, ep + 1,
+                    demo_clip_dir,
+                    headless=True,
+                    fps=CONFIG["demo"]["fps"],
+                    max_steps=CONFIG["train"]["eval_max_steps"],
+                    step=agent.total_env_steps,
+                    stage_name=stage_name,
+                )
             demo_env.close()
         except Exception as e:
             log(f"Final demo failed: {e}")
