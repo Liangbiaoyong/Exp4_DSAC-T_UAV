@@ -14,10 +14,14 @@ venv/
 .vscode/
 .idea/
 
-# Checkpoints and logs
-checkpoints/
+# Checkpoints and logs (pth managed by Git LFS)
+checkpoints/*.log
+checkpoints/*.txt
 demo_clips/
 logs/
+
+# Reference materials (PDFs, external docs) — keep local only
+references/
 
 # Utilities and generated text dumps
 PyToTxt.py
