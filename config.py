@@ -66,9 +66,9 @@ CONFIG = {
     "reward": {
         "goal_reward": 10.0,
         "step_penalty": -0.01,
-        "collision_penalty_base": 20.0,   # C_coll
+        "collision_penalty_base": 40.0,   # C_coll
         "beta_init": 1.0,
-        "beta_increment": 0.3,           # per success
+        "beta_increment": 0,           # per success
         "goal_radius": 1.5,              # distance to consider goal reached
         "guidance_scale": 0.3,           # guidance reward scale (dense shaping, was 0.1)
         "heading_scale": 0.2,            # heading alignment reward weight (cos(Δθ)-1)
