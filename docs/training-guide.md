@@ -18,6 +18,19 @@ python train.py --num_envs 2 --total_steps 5000 --save_interval_min 1 --demo_int
 python train.py --load_checkpoint checkpoints/model_20260612_120000.pth
 ```
 
+### 课程学习训练
+
+```bash
+# 启用课程学习（从指定阶段开始）
+python train.py --stage 0
+
+# 禁用课程学习（平坦训练）
+python train.py --curriculum no
+
+# 从检查点恢复（自动检测阶段）
+python train.py --load_checkpoint checkpoints/model_stage0_empty_final_step77400.pth
+```
+
 ### 自定义参数
 
 ```bash
@@ -98,6 +111,22 @@ python demo.py --no_render
 | `CONFIG["dsac_t"]` | 算法超参数 |
 | `CONFIG["train"]` | 训练参数 |
 | `CONFIG["demo"]` | 可视化参数 |
+| `CONFIG["curriculum"]` | 课程学习参数（阶段数、提前停止阈值等） |
+
+## 课程学习机制
+
+训练默认启用课程学习（Curriculum Learning），从易到难分阶段训练：
+
+| 阶段 | UAV数 | 动态障碍 | 静态障碍 | 总步数 |
+|------|-------|----------|----------|--------|
+| `stage0_empty` | 1 | × | × | 300K |
+| `stage1_obstacles` | 1 | × | ✓ | 500K |
+| `stage2_multi` | 5 | × | ✓ | 1M |
+| `stage3_dynamic` | 5 | ✓ | ✓ | 2M |
+
+每个阶段达到平均奖励阈值后可通过 **滑动窗口机制** 提前退出（`early_exit_window=5`，连续 5 次日志检查均超过阈值才触发），避免因随机波动导致过早切换。
+
+阶段切换时自动清空经验回放缓冲区，防止旧环境数据干扰新阶段学习。
 
 ## 随机种子
 

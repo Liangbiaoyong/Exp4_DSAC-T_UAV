@@ -293,6 +293,7 @@ def run_stage_training(agent: DSACTAgent, stage: Dict, stage_idx: int,
     stage_total_steps = stage["total_steps"]
     early_exit_reward = stage.get("early_exit_avg_reward", None)
     early_exit_min_steps = CONFIG["curriculum"].get("early_exit_min_steps", 50000)
+    early_exit_window = CONFIG["curriculum"].get("early_exit_window", 5)
     heading_scale = stage.get("heading_scale", 0.1)
     dynamic_obs = stage.get("dynamic_obs", True)
     num_uavs_stage = stage["num_uavs"]
@@ -318,9 +319,10 @@ def run_stage_training(agent: DSACTAgent, stage: Dict, stage_idx: int,
            f"heading_scale={heading_scale} total_steps={stage_total_steps}")
     if early_exit_reward is not None:
         log_fn(f"  early_exit @ avg_reward >= {early_exit_reward} "
-               f"(min {early_exit_min_steps} steps)")
+               f"(window={early_exit_window}, min {early_exit_min_steps} steps)")
 
     early_exit = False
+    early_exit_count = 0
 
     while stage_step < stage_total_steps and not early_exit:
         # Collect actions for all envs
@@ -407,13 +409,18 @@ def run_stage_training(agent: DSACTAgent, stage: Dict, stage_idx: int,
                 )
                 last_log_step = stage_step
 
-                # Early exit check
-                if (early_exit_reward is not None
-                        and stage_step > early_exit_min_steps
-                        and avg_reward >= early_exit_reward):
-                    log_fn(f"  >>> Early exit triggered: avg_reward {avg_reward:.2f} >= {early_exit_reward}")
-                    early_exit = True
-                    break
+                # Early exit check — sliding window: require N consecutive passes
+                if early_exit_reward is not None and stage_step > early_exit_min_steps:
+                    if avg_reward >= early_exit_reward:
+                        early_exit_count += 1
+                    else:
+                        early_exit_count = 0
+
+                    if early_exit_count >= early_exit_window:
+                        log_fn(f"  >>> Early exit triggered: avg_reward >= {early_exit_reward} "
+                               f"for {early_exit_window} consecutive checks")
+                        early_exit = True
+                        break
 
                 best_avg_reward = max(best_avg_reward, avg_reward)
 
@@ -555,6 +562,9 @@ def train():
     for stage_idx in range(start_stage_idx, len(stages)):
         stage = stages[stage_idx]
         stage_name = stage["name"]
+
+        # Clear replay buffer from previous stage — old experience is invalid for new env config
+        agent.buffer = ReplayBuffer()
 
         # Build environments for this stage
         envs = [make_env(stage) for _ in range(args.num_envs)]

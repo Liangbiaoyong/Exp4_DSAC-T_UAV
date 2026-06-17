@@ -168,6 +168,7 @@ CONFIG = {
     "curriculum": {
         "enabled": True,
         "early_exit_min_steps": 100000,   # minimum steps before early exit can trigger
+        "early_exit_window": 5,          # consecutive checks before early exit triggers
         "stages": [
             {
                 "name": "stage0_empty",

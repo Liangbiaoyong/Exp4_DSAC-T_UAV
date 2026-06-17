@@ -385,7 +385,7 @@ def main():
 
     ckpt_stage = ckpt.get("curriculum_stage", 0)
     stage_idx = args.stage if args.stage is not None else ckpt_stage
-    print(f"Agent loaded (step {agent.step}) | Device: {agent.device} | Stage: {stage_idx}")
+    print(f"Agent loaded (step {agent.step}) | Device: {agent.device}")
 
     # Create environment matching the curriculum stage
     stages = CONFIG.get("curriculum", {}).get("stages", [])
@@ -396,11 +396,16 @@ def main():
             use_dynamic_obs=stage_cfg.get("dynamic_obs", True),
             static_obstacles_enabled=stage_cfg.get("static_obstacles", True),
         )
-        print(f"Env: stage={stage_cfg['name']} uavs={stage_cfg['num_uavs']} "
-              f"dyn_obs={stage_cfg.get('dynamic_obs', True)}")
+        print(f"┌──────────────────────────────────────────────────────────┐")
+        print(f"│  Stage: {stage_cfg['name']} (idx {stage_idx})                        │")
+        print(f"│  num_uavs: {stage_cfg['num_uavs']}                                       │")
+        print(f"│  dynamic_obs: {str(stage_cfg.get('dynamic_obs', True)):>5}  static_obs: {str(stage_cfg.get('static_obstacles', True)):>5}         │")
+        print(f"│  heading_scale: {stage_cfg.get('heading_scale', 0.1):.1f}                               │")
+        print(f"│  total_steps: {stage_cfg['total_steps']:>8}                           │")
+        print(f"└──────────────────────────────────────────────────────────┘")
     else:
         env = MultiQuadrotorEnv()
-        print(f"Env: default (no stage config found)")
+        print(f"Env: default ({CONFIG['num_uavs']} UAVs, use_dynamic_obs=True)")
 
     # Run demo episodes
     total_reward = 0

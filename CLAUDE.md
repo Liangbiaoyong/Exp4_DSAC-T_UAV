@@ -45,6 +45,7 @@ A multi-UAV obstacle avoidance and shortest-path navigation system in a 50×50m 
 - **Collision handling**: Collided UAV resets to random safe position (goal unchanged), occupancy grid cleared. Boundary contact also counts as collision. Max 2000 steps.
 - **Safe goal placement**: New goals placed ≥3m from obstacles and ≥3m from world boundaries.
 - **Training**: AdamW (lr=3e-4, weight decay 1e-4), batch 256, replay buffer 1e5 (uint8 compressed), update every 50 env steps, gamma=0.99.
+- **Curriculum**: 4-stage curriculum (single-empty → single-obstacle → multi → multi-dynamic). Stage switch clears replay buffer. Early exit uses sliding window (5 consecutive checks).
 - **Checkpoint**: Every 10 min auto-save to `./checkpoints/model_step{step}_{YYYYMMDD_HHMMSS}.pth` (keeps latest 10). Auto-resume from latest checkpoint on start.
 - **Demo rendering**: Every 5 min during training, auto-renders a demo clip (1 episode) to `demo_clips/`.
 
