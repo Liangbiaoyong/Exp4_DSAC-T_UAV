@@ -203,7 +203,8 @@ def main():
     if args.load_checkpoint:
         # Support wildcard
         if "*" in args.load_checkpoint:
-            files = sorted(glob.glob(args.load_checkpoint))
+            files = sorted(glob.glob(args.load_checkpoint),
+                           key=os.path.getmtime)
             if not files:
                 print(f"No checkpoint files matching: {args.load_checkpoint}")
                 return
@@ -212,7 +213,8 @@ def main():
             checkpoint_path = args.load_checkpoint
     else:
         # Find latest checkpoint
-        files = sorted(glob.glob(os.path.join(CONFIG["paths"]["checkpoint_dir"], "model_*.pth")))
+        files = sorted(glob.glob(os.path.join(CONFIG["paths"]["checkpoint_dir"], "model_*.pth")),
+                       key=os.path.getmtime)
         if not files:
             print("No checkpoint found. Use --load_checkpoint to specify.")
             return

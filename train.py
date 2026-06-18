@@ -195,6 +195,51 @@ def run_stage_training(agent: DSACTAgent, stage: Dict, stage_idx: int,
     early_exit = False
     early_exit_count = 0
 
+    # ---------- 预热阶段：用随机动作填充缓冲区 ----------
+    warmup_target = stage.get("warmup_samples", 0)
+    min_warmup = agent.batch_size * 20
+    warmup_target = max(warmup_target, min_warmup)
+
+    if len(agent.buffer) < warmup_target:
+        log_fn(f"  Warming up buffer: {len(agent.buffer)} → {warmup_target} samples")
+
+    while len(agent.buffer) < warmup_target and stage_step < stage_total_steps:
+        for env_idx in range(args.num_envs):
+            num_uavs = len(envs[env_idx].uavs)
+            random_actions = np.random.uniform(-1.0, 1.0, size=(num_uavs, 2))
+            prev_obs_list = obs_list_list[env_idx]
+            obs_list, rewards, terminated, truncated, info = envs[env_idx].step(random_actions)
+            dones = terminated | truncated
+            obs_list_list[env_idx] = obs_list
+
+            for uav_idx in range(num_uavs):
+                obs_packed = {
+                    "grid_map": _compress_grid(prev_obs_list[uav_idx]["grid_map"]),
+                    "pointcloud": prev_obs_list[uav_idx]["pointcloud"],
+                    "self_state": prev_obs_list[uav_idx]["self_state"],
+                    "dynamic_obs": prev_obs_list[uav_idx]["dynamic_obs"],
+                }
+                next_obs_packed = {
+                    "grid_map": _compress_grid(obs_list[uav_idx]["grid_map"]),
+                    "pointcloud": obs_list[uav_idx]["pointcloud"],
+                    "self_state": obs_list[uav_idx]["self_state"],
+                    "dynamic_obs": obs_list[uav_idx]["dynamic_obs"],
+                }
+                agent.buffer.push(obs_packed, random_actions[uav_idx],
+                                  rewards[uav_idx], next_obs_packed, bool(dones[uav_idx]))
+
+            if dones.any():
+                obs_list, _ = envs[env_idx].reset()
+                obs_list_list[env_idx] = obs_list
+
+        stage_step += 1
+        agent.total_env_steps += 1
+
+        if stage_step % args.log_interval == 0:
+            log_fn(f"  [Warmup] Buffer: {len(agent.buffer)}/{warmup_target} | Step: {stage_step}")
+
+    log_fn(f"  Warmup complete. Buffer size: {len(agent.buffer)}")
+
     while stage_step < stage_total_steps and not early_exit:
         # Collect actions for all envs
         env_actions = []

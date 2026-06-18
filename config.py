@@ -178,6 +178,7 @@ CONFIG = {
                 "total_steps": 300000,
                 "early_exit_avg_reward": 0.15,   # per-step avg; single UAV in empty world reaches ~0.12-0.20
                 "heading_scale": 0.3,            # strong heading reward in empty world
+                "warmup_samples": 2000,          # 单机空旷，少量预热
             },
             {
                 "name": "stage1_obstacles",
@@ -187,6 +188,7 @@ CONFIG = {
                 "total_steps": 500000,
                 "early_exit_avg_reward": 0.15,   # obstacles slow down goal arrival
                 "heading_scale": 0.0,
+                "warmup_samples": 5000,          # 静障碍，需要更多样本
             },
             {
                 "name": "stage2_multi",
@@ -196,6 +198,7 @@ CONFIG = {
                 "total_steps": 1000000,
                 "early_exit_avg_reward": 0.15,   # collisions dilute reward
                 "heading_scale": 0.1,
+                "warmup_samples": 8000,          # 多机，更多样本
             },
             {
                 "name": "stage3_dynamic",
@@ -205,6 +208,7 @@ CONFIG = {
                 "total_steps": 2000000,
                 "early_exit_avg_reward": 0.15,  # hardest — low exit bar
                 "heading_scale": 0.2,
+                "warmup_samples": 10000,         # 最复杂阶段
             },
         ],
         "current_stage": 0,               # default starting stage index

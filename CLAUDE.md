@@ -23,6 +23,7 @@ A multi-UAV obstacle avoidance and shortest-path navigation system in a 50×50m 
 ├── dsac_t.py                  # DSAC-T algorithm implementation (loss, update, 3 refinements)
 ├── train.py                   # Training script (multi-process, checkpointing, logging, auto demo)
 ├── demo.py                    # Demo/visualization script (Matplotlib rendering)
+├── evaluate.py                # Evaluation script (multi-stage metrics)
 ├── workflow.js                # Claude Code workflow orchestration
 ├── requirements.txt           # Dependencies
 ├── CLAUDE.md                  # This file
@@ -45,7 +46,7 @@ A multi-UAV obstacle avoidance and shortest-path navigation system in a 50×50m 
 - **Collision handling**: Collided UAV resets to random safe position (goal unchanged), occupancy grid cleared. Boundary contact also counts as collision. Max 2000 steps.
 - **Safe goal placement**: New goals placed ≥3m from obstacles and ≥3m from world boundaries.
 - **Training**: AdamW (lr=3e-4, weight decay 1e-4), batch 256, replay buffer 1e5 (uint8 compressed), update every 50 env steps, gamma=0.99.
-- **Curriculum**: 4-stage curriculum (single-empty → single-obstacle → multi → multi-dynamic). Stage switch clears replay buffer. Early exit uses sliding window (5 consecutive checks).
+- **Curriculum**: 4-stage curriculum (single-empty → single-obstacle → multi → multi-dynamic). Stage switch clears replay buffer. Each stage pre-fills buffer with random-action warmup. Early exit uses sliding window (5 consecutive checks).
 - **Checkpoint**: Every 10 min auto-save to `./checkpoints/model_step{step}_{YYYYMMDD_HHMMSS}.pth` (keeps latest 10). Auto-resume from latest checkpoint on start.
 - **Demo rendering**: Every 5 min during training, auto-renders a demo clip (1 episode) to `demo_clips/`.
 
@@ -181,7 +182,7 @@ All hyperparameters live in `config.py` as a single `CONFIG` dictionary. Default
 
 ### GitHub Remote Rules
 
-- The remote repository is: **`https://github.com/Liangbiaoyong/Exp4_DSAC-T_UAV.git`**
+- The remote repository is: **`https://github.com/Liangbiaoyong/DSAC-T-Based-UAV-Obstacle-Avoidance-Navigation-Simulation.git`**
 - Detailed technical documentation is in `docs/architecture.md` (reward structure, alpha temperature, physics model, safe goal generation).
 - Always keep local and remote in sync:
   - Before making changes: `git pull`
@@ -196,7 +197,7 @@ All hyperparameters live in `config.py` as a single `CONFIG` dictionary. Default
 git init
 git add .
 git commit -m "chore: initial project setup"
-git remote add origin https://github.com/26634/Exp4_DSAC-T_UAV.git
+git remote add origin https://github.com/Liangbiaoyong/DSAC-T-Based-UAV-Obstacle-Avoidance-Navigation-Simulation.git
 git push -u origin main
 
 # Daily workflow
