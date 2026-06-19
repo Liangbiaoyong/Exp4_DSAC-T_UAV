@@ -39,6 +39,8 @@ def parse_args():
                         help="Directory to save clips")
     parser.add_argument("--fps", type=int, default=CONFIG["demo"]["fps"],
                         help="Frames per second for saved clips")
+    parser.add_argument("--render_interval", type=int, default=CONFIG["demo"]["render_interval"],
+                        help="采集帧的步数间隔")
     parser.add_argument("--no_render", action="store_true",
                         help="Skip rendering (benchmark mode)")
     parser.add_argument("--stage", type=int, default=None,
@@ -47,7 +49,8 @@ def parse_args():
 
 
 def run_demo_episode(agent, env, episode, save_dir, headless, fps,
-                     max_steps=500, step=0, stage_name=""):
+                     max_steps=500, step=0, stage_name="",
+                     render_interval=None):
     """
     Run a single demo episode with visualization.
     Simplified 1x2 layout matching train.py render_demo_clip.
@@ -62,6 +65,7 @@ def run_demo_episode(agent, env, episode, save_dir, headless, fps,
         max_steps: max steps
         step: global training step (for filename)
         stage_name: curriculum stage name (for title & filename)
+        render_interval: 每隔 N 步采集一帧（默认从配置读取）
 
     Returns:
         mean episode reward
@@ -71,6 +75,9 @@ def run_demo_episode(agent, env, episode, save_dir, headless, fps,
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import matplotlib.animation as animation
+
+    if render_interval is None:
+        render_interval = CONFIG["demo"].get("render_interval", 10)
 
     obs_list, _ = env.reset()
     total_reward = np.zeros(env.num_uavs)
@@ -87,7 +94,7 @@ def run_demo_episode(agent, env, episode, save_dir, headless, fps,
         dones = terminated | truncated
         total_reward += rewards
 
-        if _demo_step % 10 == 0:
+        if _demo_step % render_interval == 0:
             # ---- 世界视图 ----
             ax_map.clear()
             ax_map.set_xlim(0, env.world_size)
@@ -142,29 +149,27 @@ def run_demo_episode(agent, env, episode, save_dir, headless, fps,
 
             ax_map.legend(loc="upper right", fontsize=8)
 
-            # ---- 占据栅格 ----
+            # ---- 占据栅格（固定 extent，无抖动）----
             ax_grid.clear()
             grid = obs_list[0]["grid_map"]
+            grid_size = CONFIG["grid"]["size"]
+
             ax_grid.imshow(grid, cmap="hot_r", origin="lower",
-                           extent=(0, CONFIG["grid"]["size"],
-                                   0, CONFIG["grid"]["size"]))  # Y 轴 0→40，与左图一致
-            ax_grid.set_title("Occupancy Grid (UAV 0)")
+                           extent=(0, grid_size, 0, grid_size),
+                           interpolation='nearest')
             ax_grid.set_xlabel("X (m)")
             ax_grid.set_ylabel("Y (m)")
 
-            # 只绘制 UAV 0 在栅格中的位置
-            uav0 = env.uavs[0]
-            k0 = uav0.kinematics
+            # 标题栏显示 UAV 0 实时位置
+            k0 = env.uavs[0].kinematics
             pos_txt = f"UAV0: ({k0.x:.1f},{k0.y:.1f})m  heading:{np.degrees(k0.psi):.0f}deg  v:{k0.v:.1f}m/s"
-            ax_grid.text(0.5, -0.12, pos_txt, transform=ax_grid.transAxes, fontsize=7, ha="center", va="top",
-                         bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8))
+            ax_grid.set_title(f"Occupancy Grid (UAV 0)\n{pos_txt}", fontsize=8)
 
             plt.tight_layout()
             if save_dir:
                 fig.canvas.draw()
-                frame = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8)
-                frame = frame.reshape(fig.canvas.get_width_height()[::-1] + (4,))
-                frame = frame[:, :, 1:]  # ARGB → RGB
+                buffer = np.asarray(fig.canvas.renderer.buffer_rgba())
+                frame = buffer[:, :, :3]  # RGBA → RGB
                 frames.append(frame)
 
         if all(dones):
@@ -274,6 +279,7 @@ def main():
             max_steps=args.max_steps if not args.no_render else 10,
             step=agent.total_env_steps,
             stage_name=stage_name,
+            render_interval=args.render_interval,
         )
         total_reward += reward
 

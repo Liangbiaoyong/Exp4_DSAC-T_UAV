@@ -339,9 +339,9 @@ class OccupancyGrid:
         self.grid = np.ones((self.height, self.width), dtype=np.float32) * 0.5
 
     def reset(self, uav_x: float, uav_y: float):
-        """Reset grid centered on UAV."""
-        self.origin_x = uav_x - self.size / 2
-        self.origin_y = uav_y - self.size / 2
+        """Reset grid centered on UAV (origin aligned to resolution grid)."""
+        self.origin_x = round((uav_x - self.size / 2) / self.resolution) * self.resolution
+        self.origin_y = round((uav_y - self.size / 2) / self.resolution) * self.resolution
         self.grid.fill(0.5)
 
     def shift(self, uav_x: float, uav_y: float):
@@ -366,8 +366,8 @@ class OccupancyGrid:
             elif dx_pix < 0:
                 self.grid[:, :-dx_pix] = 0.5  # left edge rolled in from right
 
-            self.origin_x = new_ox
-            self.origin_y = new_oy
+            self.origin_x = round(new_ox / self.resolution) * self.resolution
+            self.origin_y = round(new_oy / self.resolution) * self.resolution
 
     def world_to_grid(self, wx: float, wy: float) -> Tuple[int, int]:
         """World coords to grid indices."""

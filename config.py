@@ -66,7 +66,7 @@ CONFIG = {
     "reward": {
         "goal_reward": 10.0,
         "step_penalty": -0.01,
-        "collision_penalty_base": 100.0,   # C_coll
+        "collision_penalty_base": 1000.0,   # C_coll
         "beta_init": 1.0,
         "beta_increment": 0,           # per success
         "goal_radius": 1.5,              # distance to consider goal reached
@@ -120,7 +120,7 @@ CONFIG = {
         "lr": 3e-4,
         "weight_decay": 1e-4,
         "batch_size": 256,
-        "buffer_capacity": 100_000,
+        "buffer_capacity": 50_000,
         "update_every": 50,         # env steps between updates
         "updates_per_step": 1,
         "c_val": 50.0,              # distribution truncation bound
@@ -134,11 +134,11 @@ CONFIG = {
     "train": {
         "num_envs": 16,
         "total_steps": 5_000_000,
-        "save_interval_min": 5,
-        "demo_interval_min": 5,     # render a demo clip every 5 minutes
+        "save_interval_min": 10,
+        "demo_interval_min": 10,     # render a demo clip every 5 minutes
         "log_interval": 100,        # steps between console logs
-        "eval_episodes": 3,         # episodes per demo render
-        "eval_max_steps": 1000,
+        "eval_episodes": 1,         # episodes per demo render
+        "eval_max_steps": 500,
     },
 
     # =========================================================================
@@ -151,6 +151,7 @@ CONFIG = {
         "predict_steps": 20,          # future prediction (2s at 0.1s dt)
         "save_frames": True,
         "fps": 10,
+        "render_interval": 5,        # 每隔 N 个环境步采集一帧
     },
 
     # =========================================================================
@@ -198,7 +199,7 @@ CONFIG = {
                 "total_steps": 1000000,
                 "early_exit_avg_reward": 0.15,   # collisions dilute reward
                 "heading_scale": 0.1,
-                "warmup_samples": 8000,          # 多机，更多样本
+                "warmup_samples": 5000,          # 多机，更多样本
             },
             {
                 "name": "stage3_dynamic",
@@ -208,7 +209,7 @@ CONFIG = {
                 "total_steps": 2000000,
                 "early_exit_avg_reward": 0.15,  # hardest — low exit bar
                 "heading_scale": 0.2,
-                "warmup_samples": 10000,         # 最复杂阶段
+                "warmup_samples": 5000,         # 最复杂阶段
             },
         ],
         "current_stage": 0,               # default starting stage index

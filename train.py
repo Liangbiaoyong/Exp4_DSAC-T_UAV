@@ -24,6 +24,7 @@ import time
 import numpy as np
 import torch
 from datetime import datetime
+from collections import deque
 from typing import Optional, Dict, List, Tuple
 
 from config import CONFIG
@@ -172,8 +173,9 @@ def run_stage_training(agent: DSACTAgent, stage: Dict, stage_idx: int,
     # Override heading_scale for this stage
     CONFIG["reward"]["heading_scale"] = heading_scale
 
-    # Per-stage stats
-    episode_rewards = [[] for _ in range(args.num_envs)]
+    # Per-stage stats — 固定长度 deque，防止内存无限增长
+    REWARD_WINDOW = 500
+    episode_rewards = [deque(maxlen=REWARD_WINDOW) for _ in range(args.num_envs)]
     stage_step = start_step   # resume from saved step count
     log_collisions = 0
     log_goals = 0
@@ -307,8 +309,11 @@ def run_stage_training(agent: DSACTAgent, stage: Dict, stage_idx: int,
                 buffer_size = len(agent.buffer)
                 alpha_val = agent.temperature.get_alpha()
 
-                recent_rewards = [r for ep in episode_rewards for r in ep[-100:]]
-                avg_reward = np.mean(recent_rewards) if recent_rewards else 0.0
+                # 从各个 deque 收集所有值（总量恒定 ≤ N*REWARD_WINDOW）
+                all_recent = []
+                for dq in episode_rewards:
+                    all_recent.extend(dq)
+                avg_reward = np.mean(all_recent) if all_recent else 0.0
 
                 n_collisions = log_collisions
                 n_goals = log_goals
@@ -367,6 +372,7 @@ def run_stage_training(agent: DSACTAgent, stage: Dict, stage_idx: int,
                             max_steps=CONFIG["train"]["eval_max_steps"],
                             step=agent.total_env_steps,
                             stage_name=stage_name,
+                            render_interval=CONFIG["demo"]["render_interval"],
                         )
                     demo_env.close()
                     log_fn("  Demo clip rendered (1 episode)")
@@ -527,6 +533,7 @@ def train():
                     max_steps=CONFIG["train"]["eval_max_steps"],
                     step=agent.total_env_steps,
                     stage_name=stage_name,
+                    render_interval=CONFIG["demo"]["render_interval"],
                 )
             demo_env.close()
         except Exception as e:

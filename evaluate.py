@@ -31,9 +31,9 @@ def parse_args():
                         help="Path to checkpoint (default: latest)")
     parser.add_argument("--stage", type=int, default=None,
                         help="Evaluate only a specific stage (0-3)")
-    parser.add_argument("--episodes", type=int, default=10,
+    parser.add_argument("--episodes", type=int, default=3,
                         help="Number of episodes per stage")
-    parser.add_argument("--max_steps", type=int, default=2000,
+    parser.add_argument("--max_steps", type=int, default=500,
                         help="Max steps per episode")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed")
